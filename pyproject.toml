@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "competitive-tracking"
+version = "0.1.0"
+description = "Modular Feishu-driven ecommerce product tracking with DrissionPage"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "DrissionPage==4.1.1.4",
+  "beautifulsoup4>=4.12,<5",
+  "lxml>=5,<7",
+  "requests>=2.32,<3",
+  "tzdata>=2024.1",
+]
+
+[project.scripts]
+competitive-tracking = "competitive_tracking.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+competitive_tracking = ["platforms/mercado/*.js"]

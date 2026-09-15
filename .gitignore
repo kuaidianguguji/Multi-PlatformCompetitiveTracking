@@ -1,0 +1,19 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.env
+.env.*
+!.env.example
+config.toml
+stron_token/
+data/
+logs/
+*.log
+.idea/
+.vscode/
+# 原始网页/截图可能包含账号信息；测试只提交自建脱敏样本。
+蓝鲸选品*

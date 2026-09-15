@@ -1,0 +1,117 @@
+# 复制为 config.toml 后使用；config.toml、stron_token、data、logs 均不提交 Git。
+# 相对路径以本配置文件所在目录为基准。所有时间单位为秒，日期时间采用指定时区。
+
+[app]
+# 按顺序执行的平台；当前仅注册 mercado，未实现的平台会打印跳过日志。
+platforms = ["mercado"]
+# Cookie、浏览器 profile、sessionStorage 的根目录；首次运行自动创建。
+session_dir = "stron_token"
+# 每次运行的 JSON 输出目录；文件以运行时间命名，latest.json 为最近一次结果。
+output_dir = "data"
+# 轮转日志目录；同时打印到控制台，不记录密钥和 Cookie。
+log_dir = "logs"
+# 日志等级，可选 DEBUG、INFO、WARNING、ERROR；INFO 包含每个命中商品的 JSON。
+log_level = "INFO"
+
+[schedule]
+# 常驻模式的每日执行时刻，24 小时制 HH:MM；修改后重启程序生效。
+daily_time = "09:00"
+# IANA 时区；Windows 由 tzdata 提供，默认中国标准时间。
+timezone = "Asia/Shanghai"
+# 常驻启动时是否先执行一次（当日已有定时执行记录则不重复）；false 等待下次时刻。
+run_on_start = false
+# 常驻检查周期；也用于响应 Ctrl+C，越小检查越频繁。
+poll_seconds = 15
+
+[feishu]
+# 飞书企业自建应用 App ID；环境变量 FEISHU_APP_ID 优先于这里的值。
+app_id = ""
+# 飞书企业自建应用 App Secret；环境变量 FEISHU_APP_SECRET 优先，切勿提交到 Git。
+app_secret = ""
+# 多维表 app_token，即 /base/ 后的 token；不是 tenant_access_token 或 Wiki token。
+# 环境变量 FEISHU_APP_TOKEN 优先。
+app_token = ""
+# 数据表 table_id，通常为 tbl 开头，从链接 table 参数获得；环境变量 FEISHU_TABLE_ID 优先。
+table_id = ""
+# 可选视图 ID；空字符串读取全表，有值时仅读取该视图的记录。
+view_id = ""
+# 飞书 HTTP 连接和读取超时；超时后按 retries 重试。
+timeout_seconds = 30
+# 网络错误、429、5xx 最大额外重试次数；权限/参数错误立即失败。
+retries = 3
+# 指数退避的初始间隔；第 n 次重试等待此值乘以 2 的 n 次方。
+retry_seconds = 2
+# 每页读取记录数，飞书上限为 500；程序自动读取所有 page_token。
+page_size = 500
+
+[feishu.fields]
+# 平台字段名称；匹配 mercado 时忽略大小写和两端空格。
+platform = "平台"
+# 商品唯一标识字段名称；保留完整字符串，Mercado ID 统一为大写。
+product_id = "商品ID"
+# 监控字段名称；只有单一文本值“开启”进入采集，true/1/其他选项不算开启。
+monitor = "监控开关"
+# 数据接收人字段名称；此字段非空才进入监控，保留人员 ID 供未来消息模块使用。
+recipients = "数据推送人"
+# 推送字段名称（截图为“推送开关”）；当前仅记录，关闭不影响抓取，未来发送模块使用。
+push = "推送开关"
+# 飞书中的商品名称字段；保留用于未来匹配运营记录。
+name = "商品名"
+
+[browser]
+# Chrome/Edge 可执行文件路径；空值由 DrissionPage 自动发现。
+executable = ""
+# 此项目专用调试端口；必须未被其他浏览器占用，禁止接管日常浏览器。
+port = 9333
+# 是否无头运行；首次登录必须 false，定时运行也建议 false 以便重新登录。
+headless = false
+# DOM 元素出现的最长等待时间。
+element_timeout_seconds = 30
+# 文档加载的最长等待时间。
+page_load_timeout_seconds = 60
+# 每轮结束关闭项目专用浏览器，确保 profile 正常落盘；常驻下轮重新加载会话。
+close_after_run = true
+
+[mercado]
+# 蓝鲸收藏页地址；优先在此查找飞书中需要监控的商品。
+favorite_url = "https://xp.lingdongsz.com/#/favorite"
+# 蓝鲸登录页地址；通过 URL fragment 判断是否需要手动登录。
+login_url = "https://xp.lingdongsz.com/#/login"
+# 手动登录成功的目标地址；检测到 /home 后再进入收藏页。
+home_url = "https://xp.lingdongsz.com/#/home"
+# 收藏页找不到商品时使用的搜索页地址。
+search_url = "https://xp.lingdongsz.com/#/searchItems"
+# 每次路由导航在文档加载完成后固定等待；按当前要求默认 10 秒。
+page_wait_seconds = 10
+# 等待人工登录最长时间；默认 5 分钟。
+manual_login_timeout_seconds = 300
+# 登录状态与异步结果的轮询间隔。
+poll_seconds = 1
+# 翻页或搜索结果变化后的额外稳定等待，防止拿到上一批商品。
+result_settle_seconds = 2
+# 虚拟表格滚动后等待 DOM、图片和 Canvas 重绘的时间。
+scroll_wait_seconds = 0.4
+# 单次滚动占可见宽度/高度的比例；小于 1 保留重叠，防止漏行和漏列。
+scroll_fraction = 0.75
+# 单页最多滚动采样次数，超限报告错误，不把未扫描商品误判为不存在。
+max_scroll_steps = 2000
+# 最大分页次数，防止异常页面无限翻页；达到上限仍有下一页则报告错误。
+max_pages = 1000
+# 点击加入收藏后等待弹窗的固定时间，按要求为 2 秒。
+favorite_dialog_wait_seconds = 2
+# 搜索命中商品加入的收藏组；该分组必须已在蓝鲸中创建。
+favorite_group = "每日查询分组"
+
+[mercado.selectors]
+# 登录按钮 XPath；修正请求中重复粘贴造成的引号/括号错误。
+login_button = '//span[contains(@class,"layout-navbars-breadcrumb-user-link")][.//span[normalize-space(.)="注册/登录"]]'
+# 搜索商品 ID 输入框 XPath。
+search_input = '//div[@class="search-bar"]//input[contains(@placeholder,"商品ID")]'
+# 搜索查询按钮 XPath。
+search_button = '//div[@class="search-bar"]//button[contains(normalize-space(.),"查询")]'
+# Element Plus 的下一页按钮 CSS；同时检查 disabled、aria-disabled 和当前页变化。
+next_button = '.el-pagination .btn-next'
+# 收藏弹窗分组选择输入框 XPath；只在弹窗出现后寻找。
+group_input = '//input[contains(@placeholder,"请选择分组")]'
+# 收藏弹窗确认按钮 XPath。
+group_confirm = '//div[contains(concat(" ",normalize-space(@class)," ")," el-message-box ")]//button[normalize-space(.)="确认"]'
