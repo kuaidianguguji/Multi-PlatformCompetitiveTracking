@@ -71,6 +71,8 @@ class MercadoCollector:
             self._element(self.selectors["login_button"]).click()
             log.warning("请在项目浏览器中手动登录蓝鲸，最长等待 %s 秒", self.cfg["manual_login_timeout_seconds"])
             self._wait(lambda: self._route_is(self.cfg["home_url"]), "手动登录超时，未检测到 /home", self.cfg["manual_login_timeout_seconds"])
+            log.info("已检测到 /home，等待登录状态稳定 %s 秒后进入收藏页", self.cfg["login_settle_seconds"])
+            time.sleep(self.cfg["login_settle_seconds"])
         if not self._route_is(self.cfg["favorite_url"]):
             self._navigate(self.cfg["favorite_url"])
 

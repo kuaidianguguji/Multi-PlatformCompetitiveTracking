@@ -79,7 +79,7 @@ class FeishuTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "游标"):
             client.read_records()
 
-    @patch("competitive_tracking.sources.feishu.time.sleep")
+    @patch("competitive_tracking.integrations.feishu.time.sleep")
     def test_retry_network_and_http_errors(self, sleep):
         for failure in [requests.ConnectionError(), response({}, 429), response({}, 503)]:
             client, session = self.make([failure, response({"code": 0})])

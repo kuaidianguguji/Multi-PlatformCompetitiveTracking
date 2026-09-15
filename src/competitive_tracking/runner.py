@@ -9,6 +9,9 @@ from zoneinfo import ZoneInfo
 
 from competitive_tracking.platforms.registry import COLLECTORS
 from competitive_tracking.sources.feishu import FeishuSource, select_targets
+from competitive_tracking.sinks.feishu import FeishuSink
+from competitive_tracking.sinks.feishu_sheets import FeishuSheetsSink
+from competitive_tracking.sinks.feishu_messages import FeishuMessageSink
 from competitive_tracking.storage import JsonSink, atomic_json
 
 log = logging.getLogger(__name__)
@@ -70,6 +73,27 @@ def run_once(cfg, source=None, registry=None, sink=None) -> dict:
         result["error"] = f"{type(exc).__name__}: {exc}"
         log.error("读取监控源失败：%s", result["error"])
     finally:
+        result["finished_at"] = datetime.now(ZoneInfo(cfg["schedule"]["timezone"])).isoformat()
+        # Always persist collection first, so a destination failure cannot lose scraped data.
+        sink.write(result)
+    outputs = [("feishu_output", "feishu_write", FeishuSink), ("feishu_sheets", "sheets_write", FeishuSheetsSink),
+               ("feishu_messages", "messages", FeishuMessageSink)]
+    for setting, report_key, factory in outputs:
+        if not cfg.get(setting, {}).get("enabled") or result["status"] == "error":
+            continue
+        # Shopee is currently JSON-only. Do not invoke another platform's destinations.
+        allowed = cfg[setting].get("platforms", ["mercado"]) if setting == "feishu_messages" else [cfg[setting].get("platform")]
+        if not any(p in allowed for p in cfg["app"]["platforms"]):
+            continue
+        try:
+            report = factory(cfg).write(result)
+            result[report_key] = {"status": report["status"], "report_path": report["report_path"]}
+            if report["status"] != "ok":
+                result["status"] = "partial"
+        except Exception as exc:
+            result[report_key] = {"status": "error", "error": f"{type(exc).__name__}: {exc}"}
+            result["status"] = "partial"
+            log.error("%s 写入失败：%s", report_key, result[report_key]["error"])
         result["finished_at"] = datetime.now(ZoneInfo(cfg["schedule"]["timezone"])).isoformat()
         sink.write(result)
     log.info("运行完成 status=%s，输出 %s", result["status"], cfg["app"]["output_dir"] / "latest.json")

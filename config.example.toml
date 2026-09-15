@@ -2,8 +2,8 @@
 # 相对路径以本配置文件所在目录为基准。所有时间单位为秒，日期时间采用指定时区。
 
 [app]
-# 按顺序执行的平台；当前仅注册 mercado，未实现的平台会打印跳过日志。
-platforms = ["mercado"]
+# 按顺序执行的平台；当前支持 mercado 和 shopee，未实现的平台打印跳过日志。
+platforms = ["mercado", "shopee"]
 # Cookie、浏览器 profile、sessionStorage 的根目录；首次运行自动创建。
 session_dir = "stron_token"
 # 每次运行的 JSON 输出目录；文件以运行时间命名，latest.json 为最近一次结果。
@@ -55,8 +55,12 @@ monitor = "监控开关"
 recipients = "数据推送人"
 # 推送字段名称（截图为“推送开关”）；当前仅记录，关闭不影响抓取，未来发送模块使用。
 push = "推送开关"
-# 飞书中的商品名称字段；保留用于未来匹配运营记录。
-name = "商品名"
+# 任务表中运营填写的自定义名称；显示在消息商品 ID 旁，不覆盖平台抓取的完整标题。
+name = "自定义-商品名"
+# 原监控表的竞品标记字段；写入结果表“竞品”，不影响监控筛选。
+competitor = "是否竞品"
+# 原监控表的负责人字段；用于结果表负责人，不以数据推送人替代。
+owner = "负责人"
 
 [browser]
 # Chrome/Edge 可执行文件路径；空值由 DrissionPage 自动发现。
@@ -85,6 +89,8 @@ search_url = "https://xp.lingdongsz.com/#/searchItems"
 page_wait_seconds = 10
 # 等待人工登录最长时间；默认 5 分钟。
 manual_login_timeout_seconds = 300
+# 手动登录成功、检测到 /home 后的独立稳定等待，再跳转收藏页；可设 3～5 秒对照测试，0 表示禁用。
+login_settle_seconds = 5
 # 登录状态与异步结果的轮询间隔。
 poll_seconds = 1
 # 翻页或搜索结果变化后的额外稳定等待，防止拿到上一批商品。
@@ -115,3 +121,162 @@ next_button = '.el-pagination .btn-next'
 group_input = '//input[contains(@placeholder,"请选择分组")]'
 # 收藏弹窗确认按钮 XPath。
 group_confirm = '//div[contains(concat(" ",normalize-space(@class)," ")," el-message-box ")]//button[normalize-space(.)="确认"]'
+
+[feishu_output]
+# 是否在 once/serve 采集后自动写入结果表；启用前填写下面的目标表标识。
+enabled = false
+# 当前结果表所属平台；本表按该平台+商品ID匹配，其他平台应使用独立的表适配配置。
+platform = "mercado"
+# 写入目标多维表 app_token，与 [feishu] 读取源的 app_token 分开；勿填写 Wiki token。
+app_token = ""
+# 写入目标数据表 table_id；按全表查重，不受链接 view 参数过滤。
+table_id = ""
+# 每批创建/更新记录数，取值 1～500；创建请求持久保存 client_token 以支持幂等重试。
+batch_size = 100
+
+[feishu_output.fields]
+# 以下为“程序字段 = 飞书目标列名”；空字符串表示不写该列，product_id 不可为空。
+# 唯一匹配列；目标表无 ID 的行不按名称猜测匹配。
+product_id = "商品ID"
+# 平台实际完整标题，不使用运营自定义商品名覆盖。
+name = "商品标题"
+# 从原监控表读取的是否竞品，目标为单选字段。
+competitor = "竞品"
+# 从原监控表读取的负责人，目标为人员字段；多负责人冲突时保留已有值并报告。
+owners = "负责人"
+# 商品当地币价格，货币为巴西雷亚尔 BRL。
+price_brl = "价格-BRL"
+# 商品人民币价格，对应采集 JSON 的 prices.CNY。
+price_cny = "价格-RMB"
+# 商品总销量，数字字段。
+sales_total = "总销量"
+# 近 7 天销量，数字字段。
+sales_7d = "销量-7天"
+# 近 30 天销量，数字字段。
+sales_30d = "销量-30天"
+# 近 60 天销量，数字字段。
+sales_60d = "销量-60天"
+# 近 90 天销量，数字字段。
+sales_90d = "销量-90天"
+# 网页显示的近 30 天 BRL 销售额，不按当前价格重新计算。
+revenue_30d_brl = "销售额-近30天"
+# 7 天销量环比；文本字段写入如 -69.50%，数字百分比字段则按百分比格式换算。
+growth_7d = "销量变化-7天环比"
+# 30 天销量环比；规则同上。
+growth_30d = "销量变化-30天环比"
+# 蓝鲸转化率；目标表实际名称为“转换率”，保留用户命名。
+conversion = "转换率"
+# 评论数量，0 仍写入；未知值跳过，不清空现有值。
+review_count = "评论数"
+# 平台评分；保留来源数值，0 评论时的 0 分不代表差评。
+rating = "评分"
+# 品牌名称，从 brand_and_seller 三项结构中取第一项。
+brand = "品牌"
+# 卖家名称，从 brand_and_seller 中取第二项。
+seller = "卖家名称"
+# 店铺类型，从 brand_and_seller 中取第三项，例如本土店。
+shop_type = "店铺类型"
+# BSR 排名；当前 --/null 不写入，不以 0 替代。
+bsr = "bsr"
+# 商品地址，目标为超链接字段。
+url = "商品链接"
+# 首张商品图片地址，目标为超链接字段；不上传附件。
+image_url = "商品图片链接"
+# 完整类目路径，以 > 分隔，目标为文本字段。
+categories = "类目路径"
+# 本次写入飞书的时间，目标为日期字段；每次成功同步均刷新，包含商品指标未变化的情况。
+# 不是商品采集时间或蓝鲸数据日期；设为空字符串可关闭此列写入。
+updated_at = "更新日期"
+
+[feishu_sheets]
+# 是否在 once/serve 每次采集后追加二维表历史；与多维结果表开关独立，示例默认关闭。
+enabled = false
+# 本二维历史表对应的平台；只记录该平台，避免将不同币种结构混入本工作表。
+platform = "mercado"
+# 二维表链接 /sheets/ 后的文档 token，不是多维表 app_token；复用 [feishu] 应用凭据。
+spreadsheet_token = ""
+# 文档内工作表的 sheet_id，不是工作表标题；由 sheets/query API 获得。
+sheet_id = ""
+# 第一行数据的行号（从 1 开始）；当前表有两行合并表头，因此为 3。
+data_start_row = 3
+# 写入前核对 A:Y 表头及列顺序，支持现有两层合并表头；避免列被移动后写错位置。
+validate_headers = true
+# 单次追加的商品行数，1～1000；每批固定写入范围并持久保存，便于异常后核对恢复。
+batch_size = 100
+# 扫描 A 列的分段行数，1～5000；取最后非空行之后追加，不填补历史中间空洞。
+scan_chunk_rows = 2000
+# 空行不足时在表末尾增加的行数，1～5000；不插入到已有数据之间。
+grow_rows = 500
+
+[feishu_messages]
+# 允许推送的平台；Shopee 当前只采集 JSON，因此暂时仅配置 mercado。
+platforms = ["mercado"]
+# 是否在 once/serve 采集后发送飞书商品卡片；复用 [feishu] 应用机器人，示例默认关闭。
+# 发送前重新读取 [feishu] 任务表，只有监控/推送开关均为“开启”才发送给该记录的数据推送人。
+enabled = false
+# 每张卡片最多容纳的商品数，1～4；按数据推送人汇总，多人字段逐人发送，不发给负责人。
+products_per_message = 4
+# 卡片“数据链接”的完整 URL，指向最新数据多维表；留空则不显示该链接。
+data_url = ""
+# 卡片“历史链接”的完整 URL，指向二维历史表；留空则不显示该链接。
+history_url = ""
+
+[shopee]
+# Shopdora 首页；浏览器先访问此地址并检查是否已登录。
+home_url = "https://www.shopdora.com/"
+# 未登录时打开的密码登录页。
+login_url = "https://www.shopdora.com/login"
+# Shopdora 手机号或子账号；环境变量 SHOPDORA_USERNAME 优先，示例不包含真实账号。
+username = ""
+# Shopdora 登录密码；环境变量 SHOPDORA_PASSWORD 优先，仅放本地配置，不提交 Git。
+password = ""
+# 本阶段只支持巴西 br；同时核验筛选区的巴西单选框，不能以顶部全局站点代替。
+site = "br"
+# 导航后额外等待页面组件挂载的时间。
+page_wait_seconds = 2
+# 自动提交密码后等待登录完成的时间；出现验证码时可在可见浏览器中手动完成。
+login_timeout_seconds = 300
+# 登录成功后等待会话稳定，再打开产品菜单。
+login_settle_seconds = 3
+# 查询或翻页请求、结果渲染的最长等待时间。
+result_timeout_seconds = 60
+# DOM、登录和查询状态的轮询间隔。
+poll_seconds = 0.5
+# 查询结束后额外等待表格及趋势图渲染的时间。
+result_settle_seconds = 2
+# 收藏分页安全上限；超限或翻页不前进时报错，避免把漏扫误判成未收藏。
+max_pages = 1000
+
+[shopee.selectors]
+# 登录表单账号输入框 CSS。
+username = 'form.login-form input[placeholder="手机号/子账号"]'
+# 登录表单密码输入框 CSS，兼容明文显示与密码掩码模式。
+password = 'form.login-form input[placeholder="请输入登录密码"]'
+# 密码登录提交按钮 CSS。
+login_submit = 'form.login-form button[type="submit"]'
+# 已登录用户区域 CSS；同时检查其中不是“登录/注册”提示。
+logged_in = '.user-info'
+# Header 产品菜单 XPath，通过悬停打开子菜单。
+product_menu = '//div[contains(@class,"serviceMain")]//span[normalize-space(.)="产品"]'
+# Header 我的收藏入口 XPath。
+favorites_menu = '//div[contains(@class,"serviceAll")]//div[contains(@class,"text") and normalize-space(.)="我的收藏"]'
+# Header 选产品入口 XPath。
+search_menu = '//div[contains(@class,"serviceAll")]//div[contains(@class,"text") and normalize-space(.)="选产品"]'
+# 当前页面筛选区域 CSS，排除隐藏弹窗和 Header 全局站点。
+filters = '.filter-containter'
+# 筛选区巴西站点单选框的标签 CSS。
+brazil = '.filter-containter label.t-radio-button:has(input[value="br"])'
+# 收藏页产品输入框 CSS，查询全收藏前清空。
+favorite_input = '.filter-containter input[placeholder="请输入产品名、链接或ID搜索"]'
+# 选产品页产品 ID 专用输入框 CSS。
+search_input = '.filter-containter .t-form-item__itemIdOrUrl input'
+# 筛选区查询按钮 CSS。
+query = '.filter-containter button.confirm'
+# 筛选区重置按钮 CSS；清除上轮残留的类目、日期、价格等条件。
+reset = '.filter-containter button.reset'
+# 结果区 CSS，仅提取商品表格，避免保存账号、登录表单等无关数据。
+results = '.result-containter'
+# 产品主行 CSS；同商品的补充信息位于紧随其后的 row-sub 行。
+rows = '.custom-table tr.row-main'
+# 分页下一页按钮 CSS；检查禁用状态和结果 ID 更新。
+next_button = '.result-containter .t-pagination__btn-next'

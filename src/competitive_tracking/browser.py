@@ -78,6 +78,7 @@ class BrowserSession:
         finally:
             if self.cfg["browser"]["close_after_run"]:
                 try:
-                    self.page.quit()
+                    # A platform may navigate into a new MixTab, which has no page.quit().
+                    self.page.browser.quit()
                 except Exception:
                     log.warning("关闭项目浏览器失败；请手动关闭后再运行")
