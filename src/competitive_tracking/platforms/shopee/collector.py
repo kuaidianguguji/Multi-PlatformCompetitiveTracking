@@ -257,6 +257,25 @@ class ShopeeCollector:
         self._wait(lambda: button('取消收藏'), 'Shopdora 加入收藏未确认成功')
         return 'added'
 
+    def _enrich_favorites(self, results):
+        """Use a fresh search snapshot for metrics absent from the favorites table."""
+        for key, entry in list(results.items()):
+            previous = entry.get('product')
+            if not previous or previous.get('origin') != 'favorite':
+                continue
+            pid = key.split(':', 1)[1]
+            try:
+                product = self._search(pid)
+                if product is None:
+                    raise RuntimeError('选产品中无精确匹配的产品 ID')
+                product['favorite_snapshot'] = previous
+                product['enriched_from_search'] = True
+                self._record(pid, product, results, 'search', 'existing')
+            except Exception as exc:
+                previous['warnings'].append('选产品补充指标失败，保留本次收藏数据：' + str(exc))
+                entry['status'] = 'partial'
+                log.warning('Shopee %s 补充失败：%s', pid, exc)
+
     def collect(self, targets):
         results = {}
         valid = {t.product_id for t in targets if ID.fullmatch(t.product_id)}
@@ -278,6 +297,8 @@ class ShopeeCollector:
                 for pid in valid:
                     results.setdefault('shopee:'+pid, {'status':'error', 'error':str(exc)})
                 return results
+            if self.cfg.get('enrich_favorites', False):
+                self._enrich_favorites(results)
             for pid in sorted(missing):
                 try:
                     product = self._search(pid)

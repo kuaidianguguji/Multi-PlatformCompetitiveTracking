@@ -20,10 +20,47 @@ def load_config(path: str | Path) -> dict:
     cfg["mercado"].setdefault("login_settle_seconds", 5)
     cfg.setdefault("feishu_output", {"enabled": False})
     cfg.setdefault("feishu_sheets", {"enabled": False})
+    for section in ('shopee_feishu_output', 'shopee_feishu_sheets'):
+        target = cfg.setdefault(section, {'enabled': False, 'platform': 'shopee'})
+        if not target.get('enabled'):
+            continue
+        if target.get('platform') != 'shopee':
+            raise ValueError(f'{section}.platform 必须为 shopee')
+        required = ('app_token', 'table_id') if section.endswith('output') else ('spreadsheet_token', 'sheet_id')
+        if any(not target.get(key) for key in required):
+            raise ValueError(f'{section} 缺少目标文档标识')
+        maximum = 500 if section.endswith('output') else 1000
+        if not isinstance(target.get('batch_size'), int) or not 1 <= target['batch_size'] <= maximum:
+            raise ValueError(f'{section}.batch_size 必须为 1..{maximum}')
+        if section.endswith('output'):
+            from competitive_tracking.sinks.shopee_fields import COLUMNS
+            if list(target.get('fields', {})) != [key for key, _ in COLUMNS]:
+                raise ValueError('Shopee 输出必须按顺序配置全部 28 个字段')
+            labels = list(target['fields'].values())
+            if not all(isinstance(label, str) and label.strip() for label in labels) or len(set(labels)) != 28:
+                raise ValueError('Shopee 输出字段名不得为空或重复')
+        else:
+            for key, minimum, maximum in (('data_start_row', 2, 1000000), ('scan_chunk_rows', 1, 5000), ('grow_rows', 1, 5000)):
+                if not isinstance(target.get(key), int) or not minimum <= target[key] <= maximum:
+                    raise ValueError(f'{section}.{key} 必须为 {minimum}..{maximum}')
+            if not isinstance(target.get('validate_headers'), bool):
+                raise ValueError(f'{section}.validate_headers 必须为布尔值')
     cfg.setdefault("feishu_messages", {"enabled": False, "products_per_message": 4})
     messages = cfg["feishu_messages"]
     messages.setdefault("platforms", ["mercado"])
     messages.setdefault("products_per_message", 4)
+    if not isinstance(messages['platforms'], list) or any(p not in ('mercado', 'shopee') for p in messages['platforms']):
+        raise ValueError('feishu_messages.platforms 必须为 mercado/shopee 平台名称列表')
+    platform_links = messages.setdefault('platform_links', {})
+    if not isinstance(platform_links, dict):
+        raise ValueError('feishu_messages.platform_links 必须为按平台区分的链接配置')
+    for platform, links in platform_links.items():
+        if platform not in ('mercado', 'shopee') or not isinstance(links, dict):
+            raise ValueError('消息链接配置仅支持 mercado/shopee')
+        for key in ('data_url', 'history_url'):
+            url = links.get(key, '')
+            if not isinstance(url, str) or (url and (urlsplit(url).scheme not in ('http', 'https') or not urlsplit(url).netloc)):
+                raise ValueError(f'feishu_messages.platform_links.{platform}.{key} 必须为完整 HTTP/HTTPS 链接或空字符串')
     for key in ("data_url", "history_url"):
         messages.setdefault(key, "")
         url = messages[key]
@@ -53,6 +90,9 @@ def load_config(path: str | Path) -> dict:
     for key in ("app_id", "app_secret", "app_token", "table_id"):
         cfg["feishu"][key] = os.environ.get(f"FEISHU_{key.upper()}", cfg["feishu"][key])
     if "shopee" in cfg:
+        cfg['shopee'].setdefault('enrich_favorites', False)
+        if not isinstance(cfg['shopee']['enrich_favorites'], bool):
+            raise ValueError('shopee.enrich_favorites 必须为布尔值')
         for key in ("username", "password"):
             cfg["shopee"][key] = os.environ.get(f"SHOPDORA_{key.upper()}", cfg["shopee"].get(key, ""))
         if cfg["shopee"].get("site") != "br":

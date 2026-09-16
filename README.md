@@ -2,7 +2,7 @@
 
 Python + DrissionPage 的模块化商品监控项目。当前实现 **飞书监控表读取 → Mercado/蓝鲸商品采集 → 本地 JSON 与日志 → 飞书结果多维表更新、二维表历史追加、运营消息推送**。
 
-已接入 **Shopee / Shopdora 巴西站**：任务读取 → 收藏扫描 → 缺失 ID 搜索并加入收藏 → JSON 与日志。Shopee 当前只采集，后续再配置其飞书输出与推送。
+已接入 **Shopee / Shopdora 巴西站**：任务读取 → 收藏扫描 → 选产品补充指标 / 缺失 ID 加入收藏 → JSON 与日志 → 多维表更新 + 二维表历史追加 → 对应运营人员消息推送。
 
 ## 快速开始（Windows / PowerShell）
 
@@ -115,7 +115,7 @@ Copy-Item config.example.toml config.toml  # 已有 config.toml 时不要覆盖
 1. 用 `stron_token/shopee/profile` 启动并最大化专用浏览器，先访问首页。已登录则复用；未登录则填账号密码并点击登录，等待用户区域显示登录成功。若出现验证码，可在登录等待时间内手动完成。
 2. 展开 Header 的“产品”菜单进入“我的收藏”。适配菜单新开标签页，切换后关闭原标签页。
 3. 重置残留筛选，点击筛选区的“巴西”，核对单选框确实选中，再点击“查询”。顶部全局站点不作为查询站点依据。
-4. 按页扫描主行及其补充信息行，只保留目标 ID 的数据。全部找到立即结束；目标仍有缺失则核验收藏页已遍历完整，再逐个进入“选产品”。
+4. 按页扫描主行及其补充信息行，只保留目标 ID 的数据。全部找到即停止收藏翻页；目标仍有缺失则核验收藏页已遍历完整，再逐个进入“选产品”。开启 `shopee.enrich_favorites` 时，已收藏商品也按 ID 查询选产品，补齐日销量、销售额和排名；关闭时恢复全部命中即结束的原流程。
 5. 选产品页重置筛选、选中巴西、清除可能默认恢复的价格区间，在专用产品 ID 输入框输入 ID 并查询。结果必须精确匹配 ID；采到后点击该商品行的“加入收藏”，等待变为“取消收藏”。收藏失败时保留已采集数据并标记 `partial`。
 6. 页面结果需与本次查询响应的 ID、总数、页码一致。分页不前进、接口失败、解析不完整均报错，不能把旧结果或未完成加载判为商品不存在。每条商品打印 JSON 日志，结束时保存运行 JSON 并关闭浏览器。
 
@@ -148,7 +148,36 @@ Shopee 商品 JSON 中的主要字段：
 python -m competitive_tracking parse-html "C:\path\mycollect.html" --platform shopee --output data/shopee_offline.json
 ```
 
-Shopee 使用与其他平台相同的 `run_*.json` / `latest.json` 格式。`once --platform shopee` 不调用飞书输出模块；消息模块另有 `[feishu_messages].platforms = ["mercado"]` 限制，防止直接补发 JSON 时提前发送 Shopee 消息。
+Shopee 使用与其他平台相同的 `run_*.json` / `latest.json` 格式。补充成功时使用本次选产品的完整快照，`enriched_from_search=true`，原收藏快照保存在 `favorite_snapshot`，避免把不同来源的价格、销量、销售额拼成一条记录。补充失败保留收藏数据并标为 `partial`，缺失字段为空，不取上次 JSON 的旧数值填充。
+
+## Shopee 飞书输出（28 个字段）
+
+`[shopee_feishu_output]` 控制 Shopee 多维表更新，`[shopee_feishu_sheets]` 控制 Shopee 二维表历史。两者复用 `[feishu]` 应用凭据，配置与 Mercado 的 `[feishu_output]` / `[feishu_sheets]` 相互独立。开启后 `once` / `serve` 自动写入；只运行 Shopee 时不会触发 Mercado 写入或消息发送。Shopee 自身的推送由 `[feishu_messages]` 总开关及 `platforms` 列表控制。
+
+多维表字段及二维表 A:AB 固定顺序为：
+
+商品ID、商品标题、自定义-商品名、更新时间、竞品、负责人、价格-BRL、日销量、月销量、日销售额、月销售额、评分数、留评率、星级、月新增评分数、点赞数、月新增点赞数、类目排名、近1天排名变化、近7天排名变化、卖家名称、店铺链接、品牌、变体数、类目路径、商品链接、商品图片链接、采集时间。
+
+- 商品 ID 为文本，多维表在 Shopee 独立表内按 ID 更新已有记录；查到多个相同 ID 时报告错误。首次命中则新增，保留现有空记录和人工内容。
+- 商品标题来自平台；自定义-商品名、竞品、负责人来自任务表。同一商品多个任务的自定义名去重后以顿号连接，负责人合并；竞品标记冲突时警告并保留原值。
+- “更新时间”为本次写入时间，“采集时间”为商品实际 `captured_at`。多维表用日期字段，二维表按 `schedule.timezone` 写时间文本。
+- 价格和销售额使用页面 BRL 标准值；留评率使用百分比格式，例如页面 4.10% 在多维表存 0.041、在二维表写 `4.10%`；它不代表转换率。
+- 月指标对应页面本次查询期间，期间和原始数据保留在 JSON；不将月销量解释为总销量。排名变化保留来源正负数和 0。
+- 多维表未知值不清空旧值；二维表本次未知指标留空，0 正常写入。商品图片保存首张 URL。每轮写入后读取核对；本地状态按目标文档隔离。
+- 二维表第 1 行表头，第 2 行起追加历史；查找 A 列最后非空行后方，整行 A:AB 检查为空才写入。同一个 `run_id` 重试不重复追加，新采集追加新历史。
+
+首次创建目标表结构使用下面的显式命令，日常采集不会擅自调整结构。它可重跑续建，只有空白默认主列可以重命名；已有不匹配表头或列顺序会停止，不覆盖。
+
+```powershell
+python -m competitive_tracking init-shopee-tables --dry-run
+python -m competitive_tracking init-shopee-tables
+python -m competitive_tracking once --platform shopee
+# 补写现有 JSON，不打开浏览器；加 --dry-run 仅预览
+python -m competitive_tracking write-feishu data/run_你的时间戳.json --platform shopee
+python -m competitive_tracking write-sheets data/run_你的时间戳.json --platform shopee
+```
+
+运行 JSON 中 `shopee_feishu_write` / `shopee_sheets_write` 记录两种输出的状态，详细报告仍保存为 `data/feishu_write_*.json` / `data/sheets_write_*.json`。初始化报告 `data/shopee_schema_*.json` 保存变更前结构和记录。[飞书创建字段 API](https://open.feishu.cn/document/server-docs/docs/bitable-v1/app-table-field/create)
 
 ## 写入飞书多维表
 
@@ -161,6 +190,7 @@ Shopee 使用与其他平台相同的 `run_*.json` / `latest.json` 格式。`onc
 | 数据 | 默认目标列 | 转换方式 |
 | --- | --- | --- |
 | 标识、标题 | 商品ID、商品标题 | 标题取平台实际标题 |
+| 运营名称 | 自定义-商品名 | 从当前任务表按 Mercado + 商品 ID 读取；同一商品多个名称去重后以顿号连接，独立于商品标题 |
 | 运营元数据 | 竞品、负责人 | 原监控表“是否竞品”与“负责人”，不以推送开关过滤写入 |
 | 价格 | 价格-BRL、价格-RMB | BRL / CNY 数值 |
 | 销量 | 总销量、销量-7天/30天/60天/90天 | 数值，0 是有效值 |
@@ -222,6 +252,8 @@ Shopee 使用与其他平台相同的 `run_*.json` / `latest.json` 格式。`onc
 
 启用 `[feishu_messages].enabled = true`，复用 `[feishu]` 的任务表和应用凭据。发送者是该自建应用的机器人，接收者来自任务表的“数据推送人”，不使用“负责人”代替。
 
+`platforms = ["mercado", "shopee"]` 允许两个平台发送；移除 `shopee` 可单独关闭 Shopee 推送。卡片指标按平台渲染，共用当前任务路由、分批、失败恢复和防重复发送逻辑。自动流程在所有平台的表同步阶段结束后执行消息推送；表同步失败仍保留采集结果并独立尝试推送。
+
 飞书应用需开启机器人能力，开通 **以应用的身份发消息（`im:message:send_as_bot`）**，将接收人纳入应用可用范围，并发布生效。给电子表格添加应用只解决文档权限，不等于拥有消息权限。[飞书发送消息 API](https://open.feishu.cn/document/server-docs/im-v1/message/create)
 
 消息规则：
@@ -229,8 +261,10 @@ Shopee 使用与其他平台相同的 `run_*.json` / `latest.json` 格式。`onc
 - 每次发送前读取当前任务表。平台、商品 ID、监控开关、数据推送人仍需满足采集筛选条件，且该记录的推送开关必须为“开启”。旧 JSON 补发同样重新检查。
 - 多人字段逐人发送；同一商品出现在多个任务记录中时，同一接收者本批次只收一次。关闭推送的记录不会把它的接收人加入其他开启记录。
 - 按接收人汇总，默认每张卡片最多 4 个商品，`products_per_message` 可设置为 1～4。使用加粗标签、分隔线和商品链接，展示实际采集时间、BRL/RMB 价格、销量、销售额、环比、转换率、评价、品牌及卖家。
+- Shopee 卡片显示 `shopee · 商品ID - 自定义名称`、完整标题、实际采集时间及查询期间；指标包含 BRL 价格、日/月销量及销售额、评分数、留评率、星级、月新增评分、点赞及月新增点赞、类目排名及近 1/7 天变化、品牌、卖家、变体数、类目路径。金额取页面标准值；留评率不当转换率，月销量不当总销量。
 - `[feishu.fields].name` 默认映射任务表的“自定义-商品名”。卡片首行显示 `mercado · 商品ID - 自定义名称`，名称为空时省略后缀；平台原始标题继续单独显示。同一接收人的多个开启任务提供不同名称时用 `/` 连接，其他接收人或关闭任务的名称不混入。
-- 每个商品末尾按 `查看商品 ｜ 数据链接 ｜ 历史链接` 排列；后两项分别配置为 `[feishu_messages].data_url`、`history_url`，填完整 URL，留空则隐藏。新卡片使用当前名称和链接；已发送卡片不自动修改，结果未知的重试仍复用原内容。
+- 每个商品末尾按 `查看商品 ｜ 数据链接 ｜ 历史链接` 排列。Mercado 兼容 `[feishu_messages].data_url` / `history_url`；Shopee 使用 `[feishu_messages.platform_links.shopee]` 下的 `data_url` / `history_url`，不会继承 Mercado 链接。同一张卡片内也逐商品选择平台对应链接。填完整 URL，留空则隐藏；可用 `platform_links.mercado` 显式覆盖 Mercado 链接。
+- 新卡片使用当前名称和链接；已发送卡片不自动修改，结果未知的重试仍复用原内容。
 - 只发送有商品数据的 `ok` / `partial` 结果；后者附不完整提示。缺失数值为 `—`，有效的 0 正常显示。历史补发不会冒充刚抓取的数据。
 - 成功状态按“采集 run_id + 接收人 open_id + 平台商品 ID”保存；同一个 JSON 再执行不重复发送，新采集则可以发送新消息。控制台和本地报告保存接收人、发送数量和 message_id；成功表示飞书接口已接收，不表示人员已读。
 - 发送前保存固定 UUID 和卡片内容，超时重试复用它们。对结果未知且超过 45 分钟的批次停止自动重发，需人工核对消息及本地状态；明确返回 99991672 的权限拒绝允许补齐权限后继续。待重试批次的推送条件变化时不发送。
@@ -241,7 +275,12 @@ Shopee 使用与其他平台相同的 `run_*.json` / `latest.json` 格式。`onc
 .\.venv\Scripts\python.exe -m competitive_tracking send-feishu data/run_你的时间戳.json --dry-run
 # 正式发送或重试原批次
 .\.venv\Scripts\python.exe -m competitive_tracking send-feishu data/run_你的时间戳.json
+# 仅推送 Shopee；不重新采集，也不重复写两张表
+.\.venv\Scripts\python.exe -m competitive_tracking send-feishu data/run_你的时间戳.json --platform shopee --dry-run
+.\.venv\Scripts\python.exe -m competitive_tracking send-feishu data/run_你的时间戳.json --platform shopee
 ```
+
+`--platform` 可重复，只缩小配置中允许的平台范围，不会启用配置中已经关闭的平台。不指定时按配置的平台列表处理输入 JSON。补发旧 JSON 显示其原始采集时间，不冒充新数据。
 
 每次生成 `data/messages_时间戳.json`，预览包含接收人和实际卡片 JSON；真实发送报告另含 message_id、错误及已发送跳过数量。`once` / `serve` 自动结果中新增 `messages` 状态。
 
@@ -256,7 +295,10 @@ src/competitive_tracking/
   sources/feishu.py                    # 飞书读取、分页、筛选与目标去重
   integrations/feishu.py               # 飞书鉴权、HTTP 重试、通用 API 分页
   sinks/feishu.py                      # 结果表字段映射、查重、更新、幂等状态和写后核对
-  sinks/feishu_sheets.py               # 二维表 25 列映射、历史追加、批次恢复和写后核对
+  sinks/feishu_sheets.py               # 二维表 25/28 列历史追加、批次恢复和写后核对
+  sinks/shopee_fields.py               # Shopee 28 个字段的顺序、类型、标准值映射
+  sinks/destinations.py                # 各平台目标配置隔离
+  sinks/provision_shopee.py             # 显式创建 Shopee 字段及二维表表头
   sinks/feishu_messages.py             # 当前任务路由、Markdown 卡片、机器人发送与批次去重
   browser.py                          # 专用浏览器、profile、sessionStorage
   platforms/registry.py               # 平台注册表

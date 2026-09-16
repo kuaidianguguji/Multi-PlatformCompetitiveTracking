@@ -12,6 +12,7 @@ from competitive_tracking.sources.feishu import FeishuSource, select_targets
 from competitive_tracking.sinks.feishu import FeishuSink
 from competitive_tracking.sinks.feishu_sheets import FeishuSheetsSink
 from competitive_tracking.sinks.feishu_messages import FeishuMessageSink
+from competitive_tracking.sinks.destinations import destination_config
 from competitive_tracking.storage import JsonSink, atomic_json
 
 log = logging.getLogger(__name__)
@@ -76,17 +77,21 @@ def run_once(cfg, source=None, registry=None, sink=None) -> dict:
         result["finished_at"] = datetime.now(ZoneInfo(cfg["schedule"]["timezone"])).isoformat()
         # Always persist collection first, so a destination failure cannot lose scraped data.
         sink.write(result)
-    outputs = [("feishu_output", "feishu_write", FeishuSink), ("feishu_sheets", "sheets_write", FeishuSheetsSink),
-               ("feishu_messages", "messages", FeishuMessageSink)]
-    for setting, report_key, factory in outputs:
-        if not cfg.get(setting, {}).get("enabled") or result["status"] == "error":
+    outputs = [(cfg, "feishu_output", "feishu_write", FeishuSink), (cfg, "feishu_sheets", "sheets_write", FeishuSheetsSink)]
+    for platform in cfg['app']['platforms']:
+        selected = destination_config(cfg, platform)
+        for section, suffix, factory in [('feishu_output', 'feishu_write', FeishuSink), ('feishu_sheets', 'sheets_write', FeishuSheetsSink)]:
+            if platform != cfg.get(section, {}).get('platform'):
+                outputs.append((selected, section, platform + '_' + suffix, factory))
+    outputs.append((cfg, 'feishu_messages', 'messages', FeishuMessageSink))
+    for selected, setting, report_key, factory in outputs:
+        if not selected.get(setting, {}).get("enabled") or result["status"] == "error":
             continue
-        # Shopee is currently JSON-only. Do not invoke another platform's destinations.
-        allowed = cfg[setting].get("platforms", ["mercado"]) if setting == "feishu_messages" else [cfg[setting].get("platform")]
+        allowed = selected[setting].get("platforms", ["mercado"]) if setting == "feishu_messages" else [selected[setting].get("platform")]
         if not any(p in allowed for p in cfg["app"]["platforms"]):
             continue
         try:
-            report = factory(cfg).write(result)
+            report = factory(selected).write(result)
             result[report_key] = {"status": report["status"], "report_path": report["report_path"]}
             if report["status"] != "ok":
                 result["status"] = "partial"

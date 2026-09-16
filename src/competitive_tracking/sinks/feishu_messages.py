@@ -31,8 +31,46 @@ def number(value, percent=False):
     return f"{n:,.2f}%" if percent else f"{n:,.2f}".rstrip("0").rstrip(".")
 
 
+def mercado_metrics(values, product):
+    return [
+        f"**价格：** R$ {number(values.get('price_brl'))} ｜ ¥ {number(values.get('price_cny'))}",
+        "**销量：** 总 " + number(values.get("sales_total")) + " ｜ " + " ｜ ".join(
+            f"{d}天 {number(values.get(f'sales_{d}d'))}" for d in (7, 30, 60, 90)),
+        f"**近30天销售额：** R$ {number(values.get('revenue_30d_brl'))}",
+        f"**销量环比：** 7天 {number(values.get('growth_7d'), True)} ｜ 30天 {number(values.get('growth_30d'), True)}",
+        f"**转换率：** {number(values.get('conversion'), True)} ｜ **评论：** {number(values.get('review_count'))} ｜ **评分：** {number(values.get('rating'))}",
+        f"**品牌 / 卖家：** {markdown_text(values.get('brand') or '—')} / {markdown_text(values.get('seller') or '—')}",
+    ]
+
+
+def shopee_metrics(values, product):
+    lines = [
+        f"**价格：** R$ {number(values.get('price_brl'))}",
+        f"**销量：** 日 {number(values.get('sales_daily'))} ｜ 月 {number(values.get('sales_monthly'))}",
+        f"**销售额：** 日 R$ {number(values.get('revenue_daily_brl'))} ｜ 月 R$ {number(values.get('revenue_monthly_brl'))}",
+        f"**评分数：** {number(values.get('review_count'))} ｜ **留评率：** {number(values.get('review_rate'), True)} ｜ **星级：** {number(values.get('rating'))}",
+        f"**月新增评分：** {number(values.get('monthly_new_reviews'))}",
+        f"**点赞数：** {number(values.get('like_count'))} ｜ **月新增点赞：** {number(values.get('monthly_new_likes'))}",
+        f"**类目排名：** {number(values.get('category_rank'))} ｜ **近1天变化：** {number(values.get('rank_daily_change'))} ｜ **近7天变化：** {number(values.get('rank_weekly_change'))}",
+        f"**品牌 / 卖家：** {markdown_text(values.get('brand') or '—')} / {markdown_text(values.get('seller') or '—')}",
+        f"**变体数：** {number(values.get('variant_count'))} ｜ **类目路径：** {markdown_text(values.get('categories') or '—')}",
+    ]
+    if product.get('query_period'):
+        lines.insert(0, f"**统计期间：** {markdown_text(product['query_period'])}")
+    return lines
+
+
+METRIC_RENDERERS = {'mercado': mercado_metrics, 'shopee': shopee_metrics}
+
+
 def product_markdown(entry, zone, settings=None):
     settings = settings or {}
+    platform = entry['platform']
+    if platform not in METRIC_RENDERERS:
+        raise ValueError(f'尚未实现 {platform} 的消息卡片')
+    # Legacy top-level URLs belong to Mercado. Other platforms must not inherit them.
+    links_settings = dict(settings) if platform == 'mercado' else {}
+    links_settings.update(settings.get('platform_links', {}).get(platform, {}))
     values, _ = product_values(entry)
     p = entry["product"]
     captured = p.get("captured_at")
@@ -49,17 +87,11 @@ def product_markdown(entry, zone, settings=None):
         heading += " - " + " / ".join(markdown_text(name) for name in custom_names)
     lines = [f"**{heading}**",
              markdown_text(values.get("name") or "未获取标题"),
-             f"**采集时间：** {captured}",
-             f"**价格：** R$ {number(values.get('price_brl'))} ｜ ¥ {number(values.get('price_cny'))}",
-             "**销量：** 总 " + number(values.get("sales_total")) + " ｜ " + " ｜ ".join(
-                 f"{d}天 {number(values.get(f'sales_{d}d'))}" for d in (7, 30, 60, 90)),
-             f"**近30天销售额：** R$ {number(values.get('revenue_30d_brl'))}",
-             f"**销量环比：** 7天 {number(values.get('growth_7d'), True)} ｜ 30天 {number(values.get('growth_30d'), True)}",
-             f"**转换率：** {number(values.get('conversion'), True)} ｜ **评论：** {number(values.get('review_count'))} ｜ **评分：** {number(values.get('rating'))}",
-             f"**品牌 / 卖家：** {markdown_text(values.get('brand') or '—')} / {markdown_text(values.get('seller') or '—')}"]
+             f"**采集时间：** {captured}"]
+    lines.extend(METRIC_RENDERERS[platform](values, p))
     links = []
-    for label, url in (("查看商品", values.get("url")), ("数据链接", settings.get("data_url")),
-                       ("历史链接", settings.get("history_url"))):
+    for label, url in (("查看商品", values.get("url")), ("数据链接", links_settings.get("data_url")),
+                       ("历史链接", links_settings.get("history_url"))):
         if url and urlsplit(url).scheme in ("http", "https") and urlsplit(url).netloc:
             links.append(f"[{label}]({quote(url, safe=':/?=&%#@+,-._~')})")
     if links:

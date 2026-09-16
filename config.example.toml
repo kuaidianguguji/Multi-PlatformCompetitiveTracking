@@ -140,6 +140,8 @@ batch_size = 100
 product_id = "商品ID"
 # 平台实际完整标题，不使用运营自定义商品名覆盖。
 name = "商品标题"
+# 任务表的自定义-商品名；同一平台和商品 ID 的多个名称去重后用顿号连接，独立于平台原始标题。
+custom_name = "自定义-商品名"
 # 从原监控表读取的是否竞品，目标为单选字段。
 competitor = "竞品"
 # 从原监控表读取的负责人，目标为人员字段；多负责人冲突时保留已有值并报告。
@@ -209,19 +211,21 @@ scan_chunk_rows = 2000
 grow_rows = 500
 
 [feishu_messages]
-# 允许推送的平台；Shopee 当前只采集 JSON，因此暂时仅配置 mercado。
-platforms = ["mercado"]
+# 允许推送的平台；只保留 mercado 可单独关闭 Shopee 推送，enabled 控制整体开关。
+platforms = ["mercado", "shopee"]
 # 是否在 once/serve 采集后发送飞书商品卡片；复用 [feishu] 应用机器人，示例默认关闭。
 # 发送前重新读取 [feishu] 任务表，只有监控/推送开关均为“开启”才发送给该记录的数据推送人。
 enabled = false
 # 每张卡片最多容纳的商品数，1～4；按数据推送人汇总，多人字段逐人发送，不发给负责人。
 products_per_message = 4
-# 卡片“数据链接”的完整 URL，指向最新数据多维表；留空则不显示该链接。
+# Mercado 卡片“数据链接”的完整 URL；兼容原配置，Shopee 使用下方按平台配置的链接。
 data_url = ""
-# 卡片“历史链接”的完整 URL，指向二维历史表；留空则不显示该链接。
+# Mercado 卡片“历史链接”的完整 URL；留空则隐藏，Shopee 不继承此值。
 history_url = ""
 
 [shopee]
+# 收藏命中后仍逐个查询选产品，补齐日销量、销售额和排名；关闭时恢复只查收藏逻辑。
+enrich_favorites = true
 # Shopdora 首页；浏览器先访问此地址并检查是否已登录。
 home_url = "https://www.shopdora.com/"
 # 未登录时打开的密码登录页。
@@ -280,3 +284,153 @@ results = '.result-containter'
 rows = '.custom-table tr.row-main'
 # 分页下一页按钮 CSS；检查禁用状态和结果 ID 更新。
 next_button = '.result-containter .t-pagination__btn-next'
+
+[shopee_feishu_output]
+# 是否将 Shopee 采集结果写入独立多维表；示例默认关闭，本地已配置表可开启。
+enabled = false
+# 本目标仅接收 shopee；商品 ID 在该平台独立表中唯一匹配。
+platform = "shopee"
+# Shopee 最新数据多维表的 app_token，复用 [feishu] 的应用凭据。
+app_token = "Sv8bbLjl9a8FUssWffHckjyInpb"
+# Shopee 目标数据表 ID；更新时读取全表查重。
+table_id = "tblwgcnRZSOy3T5v"
+# 每批创建/更新商品数，1～500；失败请求保留本地状态。
+batch_size = 100
+
+[shopee_feishu_output.fields]
+# 平台商品 ID，文本字段；避免长数字变成科学计数法，并用于更新匹配。
+product_id = "商品ID"
+# Shopdora 的完整商品标题，保留平台原文。
+name = "商品标题"
+# 任务表的自定义-商品名；同一 ID 的不同自定义名去重后以顿号连接。
+custom_name = "自定义-商品名"
+# 本次实际写入飞书的时间，日期字段；重试时沿用已保存批次时间。
+updated_at = "更新时间"
+# 任务表是否竞品，单选：是/否；冲突时保留已有值并警告。
+competitor = "竞品"
+# 任务表负责人，允许多人；按 open_id 写入人员字段。
+owners = "负责人"
+# 页面显示的 BRL 价格，不使用原始接口中尚未换算的价格。
+price_brl = "价格-BRL"
+# 选产品页面日销量；缺失留空，不以 0 代替。
+sales_daily = "日销量"
+# 页面当前查询期间的月销量，不冒充总销量或固定 30 天销量。
+sales_monthly = "月销量"
+# 选产品页面日销售额，单位 BRL，不以价格乘销量推算。
+revenue_daily_brl = "日销售额"
+# 选产品页面月销售额，单位 BRL，对应本次查询期间。
+revenue_monthly_brl = "月销售额"
+# 商品累计评分数量，不是星级。
+review_count = "评分数"
+# 页面留评率，百分比字段；0.30% 写入 0.003，不是转换率。
+review_rate = "留评率"
+# 页面商品星级数值，如 4.8。
+rating = "星级"
+# 页面月新增评分数量。
+monthly_new_reviews = "月新增评分数"
+# 页面商品点赞总数。
+like_count = "点赞数"
+# 页面月新增点赞数量。
+monthly_new_likes = "月新增点赞数"
+# 选产品页面类目排名；未知值留空。
+category_rank = "类目排名"
+# 近 1 天类目排名变化，保留来源的正负数或 0。
+rank_daily_change = "近1天排名变化"
+# 近 7 天类目排名变化，保留来源的正负数或 0。
+rank_weekly_change = "近7天排名变化"
+# 卖家名称，取 seller.name。
+seller = "卖家名称"
+# Shopee 店铺地址，超链接字段。
+shop_url = "店铺链接"
+# 页面品牌名称；页面“无”保留为文本。
+brand = "品牌"
+# 商品变体数量，取 variant_count。
+variant_count = "变体数"
+# 完整类目路径，保留页面原文。
+categories = "类目路径"
+# 商品链接，超链接字段。
+url = "商品链接"
+# 首张商品图片的 URL，超链接字段，不上传附件。
+image_url = "商品图片链接"
+# 该商品本次采集的 captured_at，日期字段，与写入时间独立。
+captured_at = "采集时间"
+
+[shopee_feishu_sheets]
+# 是否追加 Shopee 二维表历史；与多维表写入开关独立。
+enabled = false
+# 仅接收 shopee 商品，不混入 Mercado 数据。
+platform = "shopee"
+# Shopee 二维表文档 token，复用 [feishu] 的应用凭据。
+spreadsheet_token = "CEQKsDr3OhCkJItCeeFcd5Q3n9e"
+# 本次指定工作表的 ID，来源于链接 sheet 参数。
+sheet_id = "061d69"
+# 第 1 行为 28 个字段的表头，商品历史从第 2 行开始。
+data_start_row = 2
+# 每次写入前核对 A:AB 的 28 个表头及顺序，避免列调整造成错位。
+validate_headers = true
+# 每批追加行数，1～1000；同一采集 run_id 重试不会重复追加。
+batch_size = 100
+# 扫描 A 列的每段行数，1～5000，追加到最后非空行下方。
+scan_chunk_rows = 2000
+# 行数不足时追加的空白行数，1～5000，不移动已有历史。
+grow_rows = 500
+
+[feishu_messages.platform_links.shopee]
+# Shopee 卡片的数据链接，指向本平台最新结果多维表，留空则隐藏。
+data_url = "https://qcn9sleukmer.feishu.cn/base/Sv8bbLjl9a8FUssWffHckjyInpb?table=tblwgcnRZSOy3T5v&view=vewclZiRO3"
+# Shopee 卡片的历史链接，指向本平台二维历史表及指定工作表，留空则隐藏。
+history_url = "https://qcn9sleukmer.feishu.cn/sheets/CEQKsDr3OhCkJItCeeFcd5Q3n9e?sheet=061d69"
+
+[tiktok]
+# FastMoss 巴西商品搜索地址；商品 ID 由程序作为 words 参数拼接，保持完整字符串。
+search_url = "https://www.fastmoss.com/zh/e-commerce/search"
+# FastMoss 手机号；也可使用 FASTMOSS_USERNAME 环境变量，真实值只放本地配置。
+username = ""
+# FastMoss 密码；也可使用 FASTMOSS_PASSWORD 环境变量，不写入日志或商品 JSON。
+password = ""
+# 手机区号；密码登录前校验页面所选区号，默认中国 +86。
+phone_country_code = "+86"
+# 搜索国家，当前仅实现巴西 BR，并同时核对页面商品国家。
+region = "BR"
+# 每次导航后等待页面初始组件加载的秒数。
+page_wait_seconds = 3
+# 密码提交或手动登录等待上限；验证码需在浏览器内手动完成。
+login_timeout_seconds = 300
+# 登录成功后等待会话稳定的秒数，再重新查询当前商品。
+login_settle_seconds = 3
+# 单次结果渲染及页面状态等待上限。
+result_timeout_seconds = 60
+# 检查登录及结果的轮询间隔秒数。
+poll_seconds = 0.5
+# 结果 ID、分页及字段连续稳定的最短秒数，避免取到切换中的内容。
+result_settle_seconds = 2
+# 未命中目标时允许扫描的最大搜索页数；超限报错，不当作未找到。
+max_pages = 100
+
+[tiktok.selectors]
+# 游客提示弹窗中的登录按钮 XPath。
+guest_login = '//section[@role="dialog"][.//*[contains(text(),"游客身份")]]//button[normalize-space(.)="登录"]'
+# 顶部登录入口 XPath，未自动弹窗时使用。
+header_login = '//button[normalize-space(.)="登录/注册"]'
+# 手机号登录页签 XPath，限定登录弹窗。
+phone_tab = '//div[contains(@class,"login-modal")]//*[@role="tab" and normalize-space(.)="手机号登录/注册"]'
+# 从验证码切换密码登录的入口 XPath。
+password_mode = '//div[contains(@class,"login-modal")]//span[normalize-space(.)="密码登录"]'
+# 登录手机号输入框 CSS，限定登录弹窗。
+username = '.login-modal input#phone'
+# 密码输入框 CSS；密码模式切换完成后才读取。
+password = '.login-modal input[type="password"]'
+# 手机区号选项当前值 CSS；与 phone_country_code 对比。
+phone_country = '.login-modal .ant-select-selection-item'
+# 密码登录提交按钮 XPath，兼容注册/登录与登录文案。
+login_submit = '//div[contains(@class,"login-modal")]//form//button[normalize-space(.)="登录" or normalize-space(.)="注册/登录"]'
+# 登录弹窗 CSS，用于判断等待状态。
+login_modal = '.login-modal'
+# 已登录的顶部用户下拉菜单 CSS，实际结构取自提供的 HTML。
+logged_in = 'header .ant-dropdown-trigger'
+# 搜索词输入框 CSS；结果读取前必须与当前商品 ID 完全相同。
+search_input = 'input[placeholder="商品搜索"]'
+# 商品表格区域 CSS；包括横向滚动区域和分页，避免读取账户表单。
+results = '.ant-table-wrapper'
+# 下一页按钮 CSS；必须核对禁用状态，不能仅看页面是否存在按钮。
+next_button = '.ant-table-wrapper .ant-pagination-next'

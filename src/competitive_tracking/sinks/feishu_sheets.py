@@ -10,7 +10,8 @@ from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from competitive_tracking.integrations.feishu import FeishuClient
-from competitive_tracking.sinks.feishu import finite_number, product_values
+from competitive_tracking.sinks.feishu import finite_number, product_values, instant
+from competitive_tracking.sinks.shopee_fields import COLUMNS as SHOPEE_COLUMNS
 from competitive_tracking.sources.feishu import text_value
 from competitive_tracking.storage import atomic_json
 
@@ -49,7 +50,8 @@ def supplement_history_metadata(result, source_records, cfg):
     return result
 
 
-def history_row(entry, written_at):
+def history_row(entry, written_at, columns=None, timezone_name="Asia/Shanghai"):
+    columns = COLUMNS if columns is None else columns
     values, warnings = product_values(entry)
     values["updated_at"] = written_at
     owners = {}
@@ -60,10 +62,12 @@ def history_row(entry, written_at):
                 if identity:
                     owners[identity] = person.get("name") or identity
     values["owners"] = "、".join(owners.values())
-    for key in ("growth_7d", "growth_30d", "conversion"):
+    for key in ("growth_7d", "growth_30d", "conversion", "review_rate"):
         n = finite_number(values.get(key))
         values[key] = f"{n:.2f}%" if n is not None else ""
-    row = [values.get(key) if values.get(key) is not None else "" for key, _ in COLUMNS]
+    if entry['product'].get('captured_at'):
+        values['captured_at'] = instant(entry['product']['captured_at']).astimezone(ZoneInfo(timezone_name)).strftime('%Y-%m-%d %H:%M:%S')
+    row = [values.get(key) if values.get(key) is not None else "" for key, _ in columns]
     return row, warnings
 
 
@@ -98,6 +102,8 @@ class FeishuSheetsSink:
     def __init__(self, config, client=None, clock=None):
         self.config = config
         self.cfg = config["feishu_sheets"]
+        self.columns = SHOPEE_COLUMNS if self.cfg['platform'] == 'shopee' else COLUMNS
+        self.last_column = 'AB' if self.cfg['platform'] == 'shopee' else 'Y'
         self.client = client or FeishuClient(config["feishu"])
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         token = quote(self.cfg["spreadsheet_token"], safe="")
@@ -115,11 +121,12 @@ class FeishuSheetsSink:
         sheet = next((s for s in sheets if s.get("sheet_id") == self.sheet_id), None)
         if sheet is None:
             raise ValueError("配置的二维工作表 sheet_id 不存在")
-        if sheet.get("grid_properties", {}).get("column_count", 0) < len(COLUMNS):
-            raise ValueError("二维表不足 25 列，无法按 A:Y 写入")
+        if sheet.get("grid_properties", {}).get("column_count", 0) < len(self.columns):
+            raise ValueError(f"二维表不足 {len(self.columns)} 列，无法按 A:{self.last_column} 写入")
         return sheet
 
-    def _range(self, start, end, last="Y"):
+    def _range(self, start, end, last=None):
+        last = last or self.last_column
         return f"{self.sheet_id}!A{start}:{last}{end}"
 
     def _read(self, range_, *, formulas=False):
@@ -136,18 +143,19 @@ class FeishuSheetsSink:
             return
         count = self.cfg["data_start_row"] - 1
         rows = self._read(self._range(1, count))
-        rows = [list(row) + [None] * (25 - len(row)) for row in rows]
-        rows += [[None] * 25 for _ in range(count - len(rows))]
+        width = len(self.columns)
+        rows = [list(row) + [None] * (width - len(row)) for row in rows]
+        rows += [[None] * width for _ in range(count - len(rows))]
         for merge in sheet.get("merges", []):
             top, left = merge["start_row_index"], merge["start_column_index"]
             bottom, right = merge["end_row_index"], merge["end_column_index"]
             if bottom >= count:
                 raise ValueError("表头合并单元格进入数据区域，请检查 data_start_row")
-            if top < count and left < 25:
-                for col in range(left, min(right + 1, 25)):
+            if top < count and left < width:
+                for col in range(left, min(right + 1, width)):
                     rows[top][col] = rows[top][left]
         normalize = lambda value: re.sub(r"[\s\-]", "", str(value)).lower()
-        for col, (key, label) in enumerate(COLUMNS):
+        for col, (key, label) in enumerate(self.columns):
             actual = normalize("".join(str(row[col]) for row in rows if not blank(row[col])))
             allowed = {normalize(label)}
             if key.startswith("sales_"):
@@ -230,7 +238,7 @@ class FeishuSheetsSink:
         state = self._state()
         now = self.clock().astimezone(ZoneInfo(self.config["schedule"]["timezone"]))
         report_path = self.config["app"]["output_dir"] / f"sheets_write_{now.strftime('%Y%m%d_%H%M%S_%f')}.json"
-        report = {"status": "preview" if dry_run else "running", "run_id": run_id, "columns": [v for _, v in COLUMNS],
+        report = {"status": "preview" if dry_run else "running", "run_id": run_id, "columns": [v for _, v in self.columns],
                   "appended_count": 0, "recovered_count": 0, "already_recorded_count": 0, "skipped": [],
                   "batches": [], "warnings": [], "report_path": str(report_path)}
         atomic_json(report_path, report)
@@ -254,7 +262,7 @@ class FeishuSheetsSink:
                 if identity in state["completed"]:
                     report["already_recorded_count"] += 1
                     continue
-                row, warnings = history_row(entry, now.strftime("%Y-%m-%d %H:%M:%S"))
+                row, warnings = history_row(entry, now.strftime("%Y-%m-%d %H:%M:%S"), self.columns, self.config['schedule']['timezone'])
                 report["warnings"].extend(f"{key}: {w}" for w in warnings)
                 items.append((identity, row))
             next_row = self._next_row(self._metadata()) if items else None

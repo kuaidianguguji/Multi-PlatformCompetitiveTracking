@@ -11,6 +11,7 @@ import uuid
 from competitive_tracking.integrations.feishu import FeishuClient
 from competitive_tracking.sources.feishu import select_targets, text_value
 from competitive_tracking.storage import atomic_json
+from competitive_tracking.sinks.shopee_fields import KINDS as SHOPEE_KINDS, values as shopee_values
 
 log = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ KINDS = {
     "brand": "text", "seller": "text", "shop_type": "text", "url": "url", "image_url": "url", "categories": "text",
     "updated_at": "datetime",
 }
+KINDS.update(SHOPEE_KINDS)
 
 
 def finite_number(value):
@@ -80,6 +82,11 @@ def product_values(entry: dict) -> tuple[dict, list[str]]:
         values.update(zip(("brand", "seller", "shop_type"), brand))
     elif brand:
         warnings.append("品牌/卖家结构不是三项，保留目标表已有值")
+    if p.get("platform") == "shopee":
+        values = shopee_values(p)
+        values["captured_at"] = int(instant(p.get("captured_at")).timestamp() * 1000)
+    names = list(dict.fromkeys(r['name'] for r in entry.get('tracking_records', []) if r.get('name')))
+    values['custom_name'] = '、'.join(names) or None
     competitors = {r.get("competitor") for r in entry.get("tracking_records", []) if r.get("competitor")}
     if len(competitors) == 1:
         values["competitor"] = next(iter(competitors))

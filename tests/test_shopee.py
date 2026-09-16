@@ -95,9 +95,10 @@ class ShopeeTests(unittest.TestCase):
     @patch('competitive_tracking.runner.FeishuMessageSink')
     @patch('competitive_tracking.runner.FeishuSheetsSink')
     @patch('competitive_tracking.runner.FeishuSink')
-    def test_shopee_once_does_not_invoke_any_remote_sink(self,bitable,sheets,messages):
+    def test_shopee_once_respects_disabled_platform_destinations(self,bitable,sheets,messages):
         cfg=deepcopy(self.cfg)
         cfg['app']['platforms']=['shopee']
+        cfg['feishu_messages']['platforms']=['mercado']
         for key in ('feishu_output','feishu_sheets','feishu_messages'):
             cfg[key]['enabled']=True
         source=Mock()
@@ -108,7 +109,8 @@ class ShopeeTests(unittest.TestCase):
         self.assertEqual(result['status'],'ok')
         bitable.assert_not_called(); sheets.assert_not_called(); messages.assert_not_called()
 
-    def test_direct_message_replay_also_excludes_shopee(self):
+    def test_direct_message_replay_respects_platform_allowlist(self):
+        self.cfg['feishu_messages']['platforms']=['mercado']
         source=Mock()
         source.read_records.return_value=[{'fields':{'平台':'shopee','商品ID':'123456789','监控开关':'开启','推送开关':'开启','数据推送人':[{'id':'ou_test'}]}}]
         result={'run_id':'test','products':{'shopee:123456789':{'status':'ok','platform':'shopee','product_id':'123456789','product':parse_html(fixture())['123456789']}}}
