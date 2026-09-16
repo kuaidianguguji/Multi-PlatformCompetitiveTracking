@@ -105,6 +105,26 @@ def load_config(path: str | Path) -> dict:
                 raise ValueError(f"shopee.{key} 不得为负数")
     elif "shopee" in cfg["app"]["platforms"]:
         raise ValueError("启用 Shopee 需要 [shopee] 配置，请参考 config.example.toml")
+    if 'tiktok' in cfg:
+        tiktok = cfg['tiktok']
+        tiktok.setdefault('search_response_path', '/api/goods/V2/search')
+        for key in ('username', 'password'):
+            tiktok[key] = os.environ.get(f'FASTMOSS_{key.upper()}', tiktok.get(key, ''))
+        if tiktok.get('region') != 'BR':
+            raise ValueError('TikTok 当前仅实现 FastMoss 巴西站，region 必须为 BR')
+        address = urlsplit(tiktok.get('search_url', ''))
+        if address.scheme != 'https' or address.hostname not in ('www.fastmoss.com', 'fastmoss.com') or address.query or address.fragment:
+            raise ValueError('tiktok.search_url 必须为 FastMoss HTTPS 搜索页，不带查询参数')
+        for key in ('login_timeout_seconds', 'result_timeout_seconds', 'poll_seconds', 'max_pages'):
+            if tiktok.get(key, 0) <= 0:
+                raise ValueError(f'tiktok.{key} 必须大于 0')
+        if not isinstance(tiktok['max_pages'], int):
+            raise ValueError('tiktok.max_pages 必须为整数')
+        for key in ('page_wait_seconds', 'login_settle_seconds', 'result_settle_seconds'):
+            if tiktok.get(key, -1) < 0:
+                raise ValueError(f'tiktok.{key} 不得小于 0')
+    elif 'tiktok' in cfg['app']['platforms']:
+        raise ValueError('启用 TikTok 需要 [tiktok] 配置')
     for key in ("session_dir", "output_dir", "log_dir"):
         cfg["app"][key] = (path.parent / cfg["app"][key]).resolve()
     if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", cfg["schedule"]["daily_time"]):

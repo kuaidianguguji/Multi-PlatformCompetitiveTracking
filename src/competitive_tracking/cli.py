@@ -7,6 +7,7 @@ from pathlib import Path
 from competitive_tracking.config import load_config
 from competitive_tracking.platforms.mercado.parser import parse_html
 from competitive_tracking.platforms.shopee.parser import parse_html as parse_shopee_html
+from competitive_tracking.platforms.tiktok.parser import parse_html as parse_tiktok_html
 from competitive_tracking.runner import run_once, serve, setup_logging
 from competitive_tracking.sources.feishu import FeishuSource
 from competitive_tracking.sinks.feishu import FeishuSink, enrich_from_source
@@ -42,11 +43,11 @@ def main(argv=None):
     offline.add_argument("html", type=Path)
     offline.add_argument("--output", type=Path, default=Path("data/offline.json"))
     offline.add_argument("--product-id", action="append", help="仅输出给定商品ID，可重复")
-    offline.add_argument("--platform", choices=["mercado", "shopee"], default="mercado", help="导出页面所属平台")
+    offline.add_argument("--platform", choices=["mercado", "shopee", "tiktok"], default="mercado", help="导出页面所属平台")
     args = parser.parse_args(argv)
     try:
         if args.command == "parse-html":
-            parser_fn = parse_shopee_html if args.platform == "shopee" else parse_html
+            parser_fn = {'shopee': parse_shopee_html, 'tiktok': parse_tiktok_html, 'mercado': parse_html}[args.platform]
             products = parser_fn(args.html.read_text(encoding="utf-8-sig"))
             if args.product_id:
                 wanted = {x.upper().strip() for x in args.product_id}

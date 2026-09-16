@@ -3,7 +3,7 @@
 
 [app]
 # 按顺序执行的平台；当前支持 mercado 和 shopee，未实现的平台打印跳过日志。
-platforms = ["mercado", "shopee"]
+platforms = ["mercado", "shopee", "tiktok"]
 # Cookie、浏览器 profile、sessionStorage 的根目录；首次运行自动创建。
 session_dir = "stron_token"
 # 每次运行的 JSON 输出目录；文件以运行时间命名，latest.json 为最近一次结果。
@@ -384,6 +384,8 @@ history_url = "https://qcn9sleukmer.feishu.cn/sheets/CEQKsDr3OhCkJItCeeFcd5Q3n9e
 [tiktok]
 # FastMoss 巴西商品搜索地址；商品 ID 由程序作为 words 参数拼接，保持完整字符串。
 search_url = "https://www.fastmoss.com/zh/e-commerce/search"
+# 只监听页面正常发起的商品搜索接口；校验 ID/国家/页码后仅保留商品对象，排除登录元数据。
+search_response_path = "/api/goods/V2/search"
 # FastMoss 手机号；也可使用 FASTMOSS_USERNAME 环境变量，真实值只放本地配置。
 username = ""
 # FastMoss 密码；也可使用 FASTMOSS_PASSWORD 环境变量，不写入日志或商品 JSON。
@@ -427,7 +429,7 @@ login_submit = '//div[contains(@class,"login-modal")]//form//button[normalize-sp
 # 登录弹窗 CSS，用于判断等待状态。
 login_modal = '.login-modal'
 # 已登录的顶部用户下拉菜单 CSS，实际结构取自提供的 HTML。
-logged_in = 'header .ant-dropdown-trigger'
+logged_in = '[data-slot="trigger"]:has(img[alt]):has(span.text-fmblack)'
 # 搜索词输入框 CSS；结果读取前必须与当前商品 ID 完全相同。
 search_input = 'input[placeholder="商品搜索"]'
 # 商品表格区域 CSS；包括横向滚动区域和分页，避免读取账户表单。

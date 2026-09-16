@@ -4,6 +4,8 @@ Python + DrissionPage 的模块化商品监控项目。当前实现 **飞书监�
 
 已接入 **Shopee / Shopdora 巴西站**：任务读取 → 收藏扫描 → 选产品补充指标 / 缺失 ID 加入收藏 → JSON 与日志 → 多维表更新 + 二维表历史追加 → 对应运营人员消息推送。
 
+已接入 **TikTok / FastMoss 巴西站**：任务读取 → 按完整商品 ID 查询 → 手机号密码登录或复用会话 → 页面与查询响应核对 → JSON 与日志。目前 TikTok 只采集，不写飞书表、不发送消息。
+
 ## 快速开始（Windows / PowerShell）
 
 需要 Python 3.11+ 和已安装的 Chrome 或 Edge。首次使用需要能看见浏览器并手动登录蓝鲸。
@@ -105,6 +107,41 @@ Copy-Item config.example.toml config.toml  # 已有 config.toml 时不要覆盖
 - 常驻依赖进程和电脑持续运行；Windows 可在“任务计划程序”创建用户登录时启动 `serve` 的任务。首次及过期登录需要交互桌面，请选择“仅当用户登录时运行”，不要无头运行。程序路径为虚拟环境 Python，参数为 `-m competitive_tracking --config "完整配置路径" serve`，起始目录设为项目目录。
 
 `stron_token` 包含敏感登录数据和飞书同步状态；`config.toml` 包含密钥；`data`/`logs` 可能包含业务数据。它们已被 `.gitignore` 排除。不要手动强制加入 Git。外部写操作包括蓝鲸“加入收藏”、启用后的飞书表同步和消息发送，各模块可独立关闭。
+
+## TikTok / FastMoss 采集
+
+任务表平台为 `tiktok`、商品 ID 非空、监控开关严格为“开启”、数据推送人非空才会查询。商品 ID 保持字符串，19 位数字不会经过浮点转换。
+
+在本地 `[tiktok]` 配置 `username`、`password`，也可设置 `FASTMOSS_USERNAME` / `FASTMOSS_PASSWORD` 环境变量。手机号区号默认 `+86`，提交前核对页面区号。未配置凭据时打开密码表单，允许手动登录；验证码仍需在可见浏览器内完成。登录最长等待、登录稳定等待、页面等待和结果等待均独立配置。真实凭据不要放入示例配置或 Git。
+
+```powershell
+python -m competitive_tracking once --platform tiktok
+# 离线解析用户导出的商品结果页，不访问账户
+python -m competitive_tracking parse-html "C:\path\商品结果.html" --platform tiktok --output data/tiktok_offline.json
+```
+
+1. 最大化专用浏览器，使用 `stron_token/tiktok/profile` 保存 Cookie/localStorage，另保存同源 sessionStorage。
+2. 逐个构造 `https://www.fastmoss.com/zh/e-commerce/search?page=1&words=商品ID&region=BR`；有游客弹窗则点击“登录” → “手机号登录/注册” → “密码登录”，填写凭据并提交。
+3. 登录成功后先重新打开**当前商品**，再继续下一个 ID；不会跳过触发登录的首个商品。中途登录失败停止其余查询并记录失败，保留已完成商品。
+4. 只监听页面正常发起的 `/api/goods/V2/search` 响应。核对本次商品 ID、BR、页码、接口成功状态，再等待 DOM ID 集合与响应一致、分页及字段稳定。搜索框值、行 ID、商品详情链接 ID 同时核验；登录弹窗后的背景商品不作为结果。
+5. 读取整个表格 DOM，包含横向滚动视野外的列；找不到目标时扫描后续页，重复页、超过上限或接口失败记为错误，不当作未找到。
+6. 逐商品打印 JSON，结束后保存 `data/run_*.json`、`data/latest.json` 并关闭专用浏览器。`once --platform tiktok` 不调用 Mercado/Shopee 的远程输出。
+
+JSON 保留以下数据供后续选字段：
+
+| 分类 | 数据 |
+| --- | --- |
+| 商品 | 完整 ID、完整标题、巴西国家标识、图片、FastMoss 详情页、真实 TikTok 商品链接（响应提供时）、类目及三级类目 |
+| 价格与状态 | BRL 显示售价、佣金比例、星级、上架时间、下架/包邮原始标记；SKU 库存入口是否存在，不伪造实际库存数 |
+| 销量和金额 | 昨日、近 7/14/28 天、总销量与销售额；响应确认为 BRL 时保存 BRL 金额，页面万/亿约数另存 |
+| 达人/内容 | 达人出单率、关联达人、总关联达人、关联视频、关联直播数量；达人出单率不解释为商品转换率 |
+| 店铺 | 名称、ID、图片、FastMoss 店铺链接、店铺总销量 |
+| 趋势 | `sales_trend` 保存日期与逐日销量；`raw_product.trend` 保留来源原值，不将来源可能为占位的日销售额 0 擅自解释为真实销售额 |
+| 审核信息 | `raw_fields` 每列文本、完整标题、链接、图片；`display_values` 页面约数；`raw_product` 本次商品查询对象；`search_url`、`captured_at`、`warnings` |
+
+接口与 DOM 的商品 ID、国家必须相同。接口完整数值优先，未验证的其他字段仅保留原始值；`global` 中换算的其他币种不混入 BRL。只保存商品对象，不保存响应外层的登录标识/IP、请求头、Cookie、密码。静态 HTML 缺少完整 Canvas 曲线及接口数据时保留警告；登录 HTML 中的背景商品会被拒绝解析。
+
+添加 TikTok 采集不会启用其消息推送。`feishu_messages.platforms` 目前仍只支持 Mercado 和 Shopee，后续明确字段与目标表后再接入。
 
 ## Shopee / Shopdora 采集
 

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
+from copy import deepcopy
+from datetime import date
+import math
 import re
 from urllib.parse import urljoin
 
@@ -127,3 +130,53 @@ def parse_html(html):
                 raise ValueError('FastMoss 同一商品出现冲突行')
             products[pid] = p
     return products
+
+
+def attach_raw_product(product, raw):
+    """Exact ID/region checked browser response; keep displayed rounding separately."""
+    pid = product['product_id']
+    if str(raw.get('product_id')) != pid or str(raw.get('id', pid)) != pid or raw.get('region') != product['region']:
+        raise ValueError('FastMoss 接口商品 ID 或国家与页面不一致')
+    p = deepcopy(product)
+    p['raw_product'] = deepcopy(raw)
+    p['display_values'] = {key: deepcopy(p.get(key)) for key in ('prices', 'sales', 'revenue', 'related_creators', 'shop')}
+    def number(key, data=raw):
+        value = data.get(key)
+        return value if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) else None
+    for period, key in [('yesterday', 'yday'), ('7d', 'day7'), ('14d', 'day14'), ('28d', 'day28'), ('total', '')]:
+        prefix = key + '_' if key else ''
+        count = number(prefix+'sold_count')
+        if count is not None:
+            p['sales'][period] = count
+        amount = number(prefix+'sale_amount')
+        if raw.get('currency') == 'BRL' and amount is not None:
+            p['revenue'][period] = {'amount': amount, 'currency': 'BRL'}
+    for dest, source in [('related_creators', 'relate_author_count'), ('total_creators', 'total_author_count'),
+                         ('related_videos', 'relate_video_count'), ('related_livestreams', 'relate_live_count')]:
+        p[dest] = number(source)
+    shop = raw.get('shop_info') or {}
+    if number('sold_count', shop) is not None:
+        p['shop']['sales_total'] = shop['sold_count']
+    p['listed_at'] = raw.get('launch_time')
+    p['categories_by_level'] = {str(i): raw.get('category_name_l'+str(i)) for i in (1,2,3)}
+    p['off_shelves'] = raw.get('off_shelves')
+    p['free_shipping'] = raw.get('is_free_shipping')
+    link = raw.get('detail_url')
+    from urllib.parse import urlsplit
+    if isinstance(link, str) and urlsplit(link).scheme == 'https' and urlsplit(link).hostname in ('shop.tiktok.com', 'www.tiktok.com'):
+        p.update(url=link, url_type='tiktok_product')
+    trend = raw.get('trend')
+    if isinstance(trend, list) and trend:
+        points, dates = [], set()
+        for item in trend:
+            if not isinstance(item, dict) or str(item.get('product_id')) != pid or item.get('region') != product['region']:
+                raise ValueError('FastMoss 趋势的商品 ID 或国家不一致')
+            day = date.fromisoformat(item['dt']).isoformat()
+            if day in dates or number('inc_sold_count', item) is None:
+                raise ValueError('FastMoss 趋势日期重复或销量无效')
+            dates.add(day)
+            points.append({'date': day, 'sales': item['inc_sold_count']})
+        p['sales_trend'] = sorted(points, key=lambda x:x['date'])
+        p['warnings'] = [w for w in p['warnings'] if not w.startswith('近7天趋势为 Canvas')]
+    p['number_note'] = '销量和销售额优先使用本次商品查询接口原值，币种以 currency=BRL 校验；页面约数见 display_values/raw_fields。原始 global 换算数据不混入 BRL；趋势销售额占位原值仅保留在 raw_product。'
+    return p
