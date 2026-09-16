@@ -4,7 +4,7 @@ Python + DrissionPage 的模块化商品监控项目。当前实现 **飞书监�
 
 已接入 **Shopee / Shopdora 巴西站**：任务读取 → 收藏扫描 → 选产品补充指标 / 缺失 ID 加入收藏 → JSON 与日志 → 多维表更新 + 二维表历史追加 → 对应运营人员消息推送。
 
-已接入 **TikTok / FastMoss 巴西站**：任务读取 → 按完整商品 ID 查询 → 手机号密码登录或复用会话 → 页面与查询响应核对 → JSON 与日志 → 多维表按商品 ID 更新 + 二维表追加历史。TikTok 暂不发送消息。
+已接入 **TikTok / FastMoss 巴西站**：任务读取 → 按完整商品 ID 查询 → 手机号密码登录或复用会话 → 页面与查询响应核对 → JSON 与日志 → 多维表按商品 ID 更新 + 二维表追加历史 → 对应运营人员消息推送。
 
 ## 快速开始（Windows / PowerShell）
 
@@ -141,7 +141,22 @@ JSON 保留以下数据供后续选字段：
 
 接口与 DOM 的商品 ID、国家必须相同。接口完整数值优先，未验证的其他字段仅保留原始值；`global` 中换算的其他币种不混入 BRL。只保存商品对象，不保存响应外层的登录标识/IP、请求头、Cookie、密码。静态 HTML 缺少完整 Canvas 曲线及接口数据时保留警告；登录 HTML 中的背景商品会被拒绝解析。
 
-TikTok 表格写入不会启用消息推送。`feishu_messages.platforms` 目前仍只支持 Mercado 和 Shopee。
+TikTok 消息由 `[feishu_messages]` 的 `enabled` 和 `platforms` 控制，与两张表的写入开关独立。
+
+## TikTok 飞书消息推送
+
+沿用其他平台的机器人卡片流程：发送前重新读取任务表，平台为 `tiktok`、商品 ID 匹配、监控开关和推送开关均为“开启”，才发送给该任务的“数据推送人”。支持多人接收；负责人不作为发送目标。同一采集批次、同一接收人、同一平台商品只发送一次。每张卡片最多 4 个商品，失败重试保留原 UUID 和发送状态。
+
+卡片显示完整商品 ID、自定义商品名、平台标题、原始采集时间、当前价和原价、佣金、各周期销量/销售额、星级、达人出单率、达人/视频/直播数量、店铺、类目和下架状态。缺失值显示 `—`，真实 0 保留。底部按顺序显示“查看商品｜数据链接｜历史链接”，链接来自 `[feishu_messages.platform_links.tiktok]`。
+
+```powershell
+# 预览当前接收人和卡片；不打开浏览器、不写两张表
+python -m competitive_tracking send-feishu data/run_示例.json --platform tiktok --dry-run
+# 发送已有采集数据，保留其原始采集时间
+python -m competitive_tracking send-feishu data/run_示例.json --platform tiktok
+```
+
+本地配置已将 TikTok 加入消息允许列表。`once --platform tiktok` / `serve` 在表格写入阶段后自动推送；示例配置仍默认关闭整体消息开关。详细结果与消息 ID 保存在 `data/messages_*.json`，去重状态保存在 `stron_token/feishu_messages_*.json`。
 
 ## TikTok 飞书表格写入
 

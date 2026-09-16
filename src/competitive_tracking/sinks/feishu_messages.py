@@ -60,7 +60,22 @@ def shopee_metrics(values, product):
     return lines
 
 
-METRIC_RENDERERS = {'mercado': mercado_metrics, 'shopee': shopee_metrics}
+def tiktok_metrics(values, product):
+    periods = [('yesterday', '昨日'), ('7d', '近7天'), ('14d', '近14天'), ('28d', '近28天'), ('total', '总计')]
+    return [
+        f"**当前价格：** R$ {number(values.get('price_brl'))} ｜ **原价：** R$ {number(values.get('original_price_brl'))}",
+        f"**佣金比例：** {number(values.get('commission_rate'), True)} ｜ **星级：** {number(values.get('rating'))}",
+        '**销量：** ' + ' ｜ '.join(f"{label} {number(values.get('sales_' + key))}" for key, label in periods),
+        '**销售额（BRL）：** ' + ' ｜ '.join(f"{label} R$ {number(values.get('revenue_' + key + '_brl'))}" for key, label in periods),
+        f"**达人出单率：** {number(values.get('creator_order_rate'), True)}",
+        f"**关联达人数：** {number(values.get('related_creators'))} ｜ **总关联达人数：** {number(values.get('total_creators'))}",
+        f"**关联视频数：** {number(values.get('related_videos'))} ｜ **关联直播数：** {number(values.get('related_livestreams'))}",
+        f"**店铺：** {markdown_text(values.get('shop_name') or '—')} ｜ **店铺总销量：** {number(values.get('shop_sales_total'))}",
+        f"**当前类目：** {markdown_text(values.get('category') or '—')} ｜ **是否下架：** {markdown_text(values.get('off_shelves') or '—')}",
+    ]
+
+
+METRIC_RENDERERS = {'mercado': mercado_metrics, 'shopee': shopee_metrics, 'tiktok': tiktok_metrics}
 
 
 def product_markdown(entry, zone, settings=None):

@@ -145,8 +145,9 @@ class TikTokTests(unittest.TestCase):
     @patch('competitive_tracking.runner.FeishuMessageSink')
     @patch('competitive_tracking.runner.FeishuSheetsSink')
     @patch('competitive_tracking.runner.FeishuSink')
-    def test_json_only_no_remote_outputs(self,bitable,sheets,messages):
+    def test_disabled_tiktok_outputs_do_not_use_other_platform_outputs(self,bitable,sheets,messages):
         cfg=deepcopy(self.cfg); cfg['app']['platforms']=['tiktok']
+        cfg['feishu_messages']['platforms']=['mercado','shopee']
         for setting in ('feishu_output','feishu_sheets','feishu_messages','shopee_feishu_output','shopee_feishu_sheets'): cfg[setting]['enabled']=True
         source=Mock(); source.read_records.return_value=[{'fields':{'平台':'tiktok','商品ID':PID,'监控开关':'开启','推送开关':'开启','数据推送人':[{'id':'ou_test'}]}}]
         collector=Mock(); collector.return_value.collect.return_value={'tiktok:'+PID:{'status':'partial','product':parse_html(fixture())[PID]}}

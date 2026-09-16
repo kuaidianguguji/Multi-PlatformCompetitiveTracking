@@ -39,7 +39,7 @@ def main(argv=None):
     initialize_tiktok.add_argument('--dry-run', action='store_true', help='只检查结构，不修改飞书')
     messages = commands.add_parser("send-feishu", help="按当前任务表接收人和推送开关发送已有采集数据")
     messages.add_argument("json_file", type=Path, help="run_*.json 文件路径")
-    messages.add_argument('--platform', action='append', choices=['mercado', 'shopee'], help='仅推送指定且在配置中启用的平台，可重复；不填写则使用配置的平台列表')
+    messages.add_argument('--platform', action='append', choices=['mercado', 'shopee', 'tiktok'], help='仅推送指定且在配置中启用的平台，可重复；不填写则使用配置的平台列表')
     messages.add_argument("--dry-run", action="store_true", help="只读任务表并生成消息预览，不发送")
     offline = commands.add_parser("parse-html", help="离线解析导出 HTML；Canvas 和未导出的虚拟行不可恢复")
     offline.add_argument("html", type=Path)

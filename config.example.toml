@@ -211,16 +211,16 @@ scan_chunk_rows = 2000
 grow_rows = 500
 
 [feishu_messages]
-# 允许推送的平台；只保留 mercado 可单独关闭 Shopee 推送，enabled 控制整体开关。
-platforms = ["mercado", "shopee"]
+# 允许推送的平台列表；移除某个平台即可关闭该平台推送，enabled 控制整体开关。
+platforms = ["mercado", "shopee", "tiktok"]
 # 是否在 once/serve 采集后发送飞书商品卡片；复用 [feishu] 应用机器人，示例默认关闭。
 # 发送前重新读取 [feishu] 任务表，只有监控/推送开关均为“开启”才发送给该记录的数据推送人。
 enabled = false
 # 每张卡片最多容纳的商品数，1～4；按数据推送人汇总，多人字段逐人发送，不发给负责人。
 products_per_message = 4
-# Mercado 卡片“数据链接”的完整 URL；兼容原配置，Shopee 使用下方按平台配置的链接。
+# Mercado 卡片“数据链接”的完整 URL；兼容原配置，Shopee/TikTok 使用下方按平台配置的链接。
 data_url = ""
-# Mercado 卡片“历史链接”的完整 URL；留空则隐藏，Shopee 不继承此值。
+# Mercado 卡片“历史链接”的完整 URL；留空则隐藏，Shopee/TikTok 不继承此值。
 history_url = ""
 
 [shopee]
@@ -536,3 +536,9 @@ batch_size = 100
 scan_chunk_rows = 2000
 # 工作表行容量不足时新增的行数，范围 1～5000。
 grow_rows = 500
+
+[feishu_messages.platform_links.tiktok]
+# TikTok 消息卡片“数据链接”，指向本平台最新结果多维表；留空隐藏。
+data_url = "https://qcn9sleukmer.feishu.cn/base/RciEbRT9MaWeA3sMesqcuGswnQ4?table=tblqXfY36xQ2iNP8&view=vewcfc4tJB"
+# TikTok 消息卡片“历史链接”，指向本平台历史二维表；留空隐藏。
+history_url = "https://qcn9sleukmer.feishu.cn/sheets/OTfUsgawthKeVLt2Be2crr6EnDf?sheet=ae1e40"

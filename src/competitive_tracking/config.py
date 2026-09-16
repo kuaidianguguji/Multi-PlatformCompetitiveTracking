@@ -52,14 +52,14 @@ def load_config(path: str | Path) -> dict:
     messages = cfg["feishu_messages"]
     messages.setdefault("platforms", ["mercado"])
     messages.setdefault("products_per_message", 4)
-    if not isinstance(messages['platforms'], list) or any(p not in ('mercado', 'shopee') for p in messages['platforms']):
-        raise ValueError('feishu_messages.platforms 必须为 mercado/shopee 平台名称列表')
+    if not isinstance(messages['platforms'], list) or any(p not in ('mercado', 'shopee', 'tiktok') for p in messages['platforms']):
+        raise ValueError('feishu_messages.platforms 必须为 mercado/shopee/tiktok 平台名称列表')
     platform_links = messages.setdefault('platform_links', {})
     if not isinstance(platform_links, dict):
         raise ValueError('feishu_messages.platform_links 必须为按平台区分的链接配置')
     for platform, links in platform_links.items():
-        if platform not in ('mercado', 'shopee') or not isinstance(links, dict):
-            raise ValueError('消息链接配置仅支持 mercado/shopee')
+        if platform not in ('mercado', 'shopee', 'tiktok') or not isinstance(links, dict):
+            raise ValueError('消息链接配置仅支持 mercado/shopee/tiktok')
         for key in ('data_url', 'history_url'):
             url = links.get(key, '')
             if not isinstance(url, str) or (url and (urlsplit(url).scheme not in ('http', 'https') or not urlsplit(url).netloc)):
