@@ -436,3 +436,103 @@ search_input = 'input[placeholder="商品搜索"]'
 results = '.ant-table-wrapper'
 # 下一页按钮 CSS；必须核对禁用状态，不能仅看页面是否存在按钮。
 next_button = '.ant-table-wrapper .ant-pagination-next'
+
+[tiktok_feishu_output]
+# 是否在 TikTok 采集后更新本平台多维结果表；复用飞书应用凭据。
+enabled = false
+# 仅处理 tiktok 商品；商品 ID 是本平台目标表的唯一键。
+platform = "tiktok"
+# TikTok 结果多维表 token，取自目标链接 /base/ 后的部分。
+app_token = "RciEbRT9MaWeA3sMesqcuGswnQ4"
+# TikTok 结果数据表 ID，取自链接 table 参数。
+table_id = "tblqXfY36xQ2iNP8"
+# 多维表每批更新或新建数量，范围 1～500。
+batch_size = 100
+
+[tiktok_feishu_output.fields]
+# 商品唯一 ID，文本保存完整位数；同平台按此字段更新。
+product_id = "商品ID"
+# FastMoss 完整商品标题。
+name = "完整标题"
+# 任务表“自定义-商品名”，不使用平台标题替代。
+custom_name = "自定义-商品名"
+# 本次写入时间，日期类型，与采集时间独立。
+updated_at = "更新日期"
+# 任务表“是否竞品”，单选是/否。
+competitor = "竞品"
+# 任务表负责人，多人员字段；不使用数据推送人替代。
+owners = "负责人"
+# 映射“当前价格-BRL”；取采集 JSON 对应值；缺失留空，真实 0 保留。
+price_brl = "当前价格-BRL"
+# 来源原价 ori_price，识别巴西小数逗号并转换为 BRL 数值。
+original_price_brl = "原价-BRL"
+# 商品佣金比例；8% 存为百分比字段 0.08，未知留空。
+commission_rate = "佣金比例"
+# 映射“昨日销量”；取采集 JSON 对应值；缺失留空，真实 0 保留。
+sales_yesterday = "昨日销量"
+# 映射“近7天销量”；取采集 JSON 对应值；缺失留空，真实 0 保留。
+sales_7d = "近7天销量"
+# 映射“近14天销量”；取采集 JSON 对应值；缺失留空，真实 0 保留。
+sales_14d = "近14天销量"
+# 映射“近28天销量”；取采集 JSON 对应值；缺失留空，真实 0 保留。
+sales_28d = "近28天销量"
+# 映射“总销量”；取采集 JSON 对应值；缺失留空，真实 0 保留。
+sales_total = "总销量"
+# 映射“昨日销售额-BRL”；BRL 金额，缺失留空，不按价格和销量推算。
+revenue_yesterday_brl = "昨日销售额-BRL"
+# 映射“近7天销售额-BRL”；BRL 金额，缺失留空，不按价格和销量推算。
+revenue_7d_brl = "近7天销售额-BRL"
+# 映射“近14天销售额-BRL”；BRL 金额，缺失留空，不按价格和销量推算。
+revenue_14d_brl = "近14天销售额-BRL"
+# 映射“近28天销售额-BRL”；BRL 金额，缺失留空，不按价格和销量推算。
+revenue_28d_brl = "近28天销售额-BRL"
+# 映射“总销售额-BRL”；BRL 金额，缺失留空，不按价格和销量推算。
+revenue_total_brl = "总销售额-BRL"
+# 映射“星级”；取采集 JSON 对应值；缺失留空，真实 0 保留。
+rating = "星级"
+# 达人出单率；不是商品购买转换率，百分比字段。
+creator_order_rate = "达人出单率"
+# 映射“关联达人数”；取采集 JSON 对应值；缺失留空，真实 0 保留。
+related_creators = "关联达人数"
+# 映射“总关联达人数”；取采集 JSON 对应值；缺失留空，真实 0 保留。
+total_creators = "总关联达人数"
+# 映射“关联视频数”；取采集 JSON 对应值；缺失留空，真实 0 保留。
+related_videos = "关联视频数"
+# 映射“关联直播数”；取采集 JSON 对应值；缺失留空，真实 0 保留。
+related_livestreams = "关联直播数"
+# 店铺 ID，文本保存完整位数。
+shop_id = "店铺ID"
+# 映射“店铺名称”；取采集 JSON 对应值；缺失留空，真实 0 保留。
+shop_name = "店铺名称"
+# 映射“店铺总销量”；取采集 JSON 对应值；缺失留空，真实 0 保留。
+shop_sales_total = "店铺总销量"
+# FastMoss 店铺分析页面超链接。
+shop_url = "店铺分析链接"
+# 映射“商品链接”；取采集 JSON 对应值；缺失留空，真实 0 保留。
+url = "商品链接"
+# 映射“当前类目”；取采集 JSON 对应值；缺失留空，真实 0 保留。
+category = "当前类目"
+# 原始商品 captured_at，日期类型，补写历史时不改成当前时间。
+captured_at = "采集时间"
+# 下架标记 0→否、1→是，未知留空。
+off_shelves = "是否下架"
+
+[tiktok_feishu_sheets]
+# 是否追加 TikTok 历史二维表；与多维结果表开关独立。
+enabled = false
+# 仅处理 TikTok 数据，避免写入其他平台商品。
+platform = "tiktok"
+# 历史电子表格 token，取自链接 /sheets/ 后的部分。
+spreadsheet_token = "OTfUsgawthKeVLt2Be2crr6EnDf"
+# 指定子工作表 ID，取自链接 sheet 参数。
+sheet_id = "ae1e40"
+# 第 1 行为表头；从第 2 行起按 A 列最后非空行向下追加。
+data_start_row = 2
+# 每次写入前校验 A:AG 全部 33 个表头及顺序，避免错列。
+validate_headers = true
+# 每批追加行数，范围 1～1000；相同 run_id 重试不重复写入。
+batch_size = 100
+# 扫描 A 列每段行数，范围 1～5000。
+scan_chunk_rows = 2000
+# 工作表行容量不足时新增的行数，范围 1～5000。
+grow_rows = 500

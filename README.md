@@ -4,7 +4,7 @@ Python + DrissionPage 的模块化商品监控项目。当前实现 **飞书监�
 
 已接入 **Shopee / Shopdora 巴西站**：任务读取 → 收藏扫描 → 选产品补充指标 / 缺失 ID 加入收藏 → JSON 与日志 → 多维表更新 + 二维表历史追加 → 对应运营人员消息推送。
 
-已接入 **TikTok / FastMoss 巴西站**：任务读取 → 按完整商品 ID 查询 → 手机号密码登录或复用会话 → 页面与查询响应核对 → JSON 与日志。目前 TikTok 只采集，不写飞书表、不发送消息。
+已接入 **TikTok / FastMoss 巴西站**：任务读取 → 按完整商品 ID 查询 → 手机号密码登录或复用会话 → 页面与查询响应核对 → JSON 与日志 → 多维表按商品 ID 更新 + 二维表追加历史。TikTok 暂不发送消息。
 
 ## 快速开始（Windows / PowerShell）
 
@@ -141,7 +141,31 @@ JSON 保留以下数据供后续选字段：
 
 接口与 DOM 的商品 ID、国家必须相同。接口完整数值优先，未验证的其他字段仅保留原始值；`global` 中换算的其他币种不混入 BRL。只保存商品对象，不保存响应外层的登录标识/IP、请求头、Cookie、密码。静态 HTML 缺少完整 Canvas 曲线及接口数据时保留警告；登录 HTML 中的背景商品会被拒绝解析。
 
-添加 TikTok 采集不会启用其消息推送。`feishu_messages.platforms` 目前仍只支持 Mercado 和 Shopee，后续明确字段与目标表后再接入。
+TikTok 表格写入不会启用消息推送。`feishu_messages.platforms` 目前仍只支持 Mercado 和 Shopee。
+
+## TikTok 飞书表格写入
+
+通过 `[tiktok_feishu_output]` 和 `[tiktok_feishu_sheets]` 独立控制两张表，复用 `[feishu]` 应用凭据。示例配置默认关闭，本地配置已启用。目标文档必须将应用添加为可编辑成员；可以读取文档不代表可以修改字段或写入数据。
+
+33 个字段按配置与 `sinks/tiktok_fields.py` 的顺序保存；二维表范围为 **A:AG**，第 1 行表头、第 2 行起数据。
+
+- 多维表按 TikTok 商品 ID 更新原记录；不存在时新建。商品和店铺 ID 均为文本，保留 19 位数字。未知指标不覆盖旧值。
+- 二维表每次新采集追加到 A 列最后非空行下方；同一 `run_id` 重试不会重复追加。未知指标留空，真实 0 保留。
+- 更新日期使用写入时刻；采集时间使用 JSON 原始时间。百分比正确换算，佣金 8% 在多维表存为 0.08；二维表显示 `8.00%`。
+- 原价读取 `raw_product.ori_price`，支持巴西格式 `R$ 70,00`，只写 BRL。下架标记 0→否、1→是，未知留空。
+- 自定义名称、竞品和负责人来自任务记录；负责人为空时留空，不取数据推送人代替。
+
+```powershell
+# 显式初始化字段和表头；检查既有内容，变更前保存本地报告
+python -m competitive_tracking init-tiktok-tables --dry-run
+python -m competitive_tracking init-tiktok-tables
+# 预览或补写历史采集 JSON，无需重新打开浏览器
+python -m competitive_tracking write-feishu data/run_示例.json --platform tiktok --dry-run
+python -m competitive_tracking write-feishu data/run_示例.json --platform tiktok
+python -m competitive_tracking write-sheets data/run_示例.json --platform tiktok
+```
+
+正常 `once --platform tiktok` / `serve` 会在本地 JSON 保存后分别执行两张表输出。运行结果中的 `tiktok_feishu_write` / `tiktok_sheets_write` 记录状态；详细报告保存在 `data/`，去重状态保存在 `stron_token/`。初始化只改空白默认主字段、追加缺失字段和空白表头，不删除原有记录或覆盖其他表头。
 
 ## Shopee / Shopdora 采集
 

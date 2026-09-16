@@ -27,14 +27,16 @@ def main(argv=None):
     commands.add_parser("check-config", help="检查配置，不打开浏览器、不访问飞书")
     publish = commands.add_parser("write-feishu", help="将已有采集 JSON 同步到飞书结果表，不打开浏览器")
     publish.add_argument("json_file", type=Path, help="run_*.json 文件路径")
-    publish.add_argument("--platform", choices=["mercado", "shopee"], default="mercado", help="目标平台，默认 mercado")
+    publish.add_argument("--platform", choices=["mercado", "shopee", "tiktok"], default="mercado", help="目标平台，默认 mercado")
     publish.add_argument("--dry-run", action="store_true", help="读取字段和记录并生成本地写入预览，不修改飞书")
     history = commands.add_parser("write-sheets", help="将已有采集 JSON 追加到二维历史表，不覆盖旧数据")
     history.add_argument("json_file", type=Path, help="run_*.json 文件路径")
-    history.add_argument("--platform", choices=["mercado", "shopee"], default="mercado", help="目标平台，默认 mercado")
+    history.add_argument("--platform", choices=["mercado", "shopee", "tiktok"], default="mercado", help="目标平台，默认 mercado")
     history.add_argument("--dry-run", action="store_true", help="只生成追加区域和数据预览，不修改二维表")
     initialize = commands.add_parser('init-shopee-tables', help='按配置创建 Shopee 28 个字段和二维表表头；不写商品数据')
     initialize.add_argument('--dry-run', action='store_true', help='检查结构并列出所需变更，不修改飞书')
+    initialize_tiktok = commands.add_parser('init-tiktok-tables', help='创建 TikTok 33 个字段和二维表表头')
+    initialize_tiktok.add_argument('--dry-run', action='store_true', help='只检查结构，不修改飞书')
     messages = commands.add_parser("send-feishu", help="按当前任务表接收人和推送开关发送已有采集数据")
     messages.add_argument("json_file", type=Path, help="run_*.json 文件路径")
     messages.add_argument('--platform', action='append', choices=['mercado', 'shopee'], help='仅推送指定且在配置中启用的平台，可重复；不填写则使用配置的平台列表')
@@ -68,9 +70,9 @@ def main(argv=None):
             print("配置结构正确。" + ("尚需填写飞书字段：" + ", ".join(missing) if missing else "飞书必要字段已填写。"))
             return 2 if missing else 0
         with single_instance(cfg["app"]["session_dir"]):
-            if args.command == 'init-shopee-tables':
+            if args.command in ('init-shopee-tables', 'init-tiktok-tables'):
                 from competitive_tracking.sinks.provision_shopee import provision
-                print(json.dumps(provision(destination_config(cfg, 'shopee'), dry_run=args.dry_run), ensure_ascii=False))
+                print(json.dumps(provision(destination_config(cfg, args.command.split('-')[1]), dry_run=args.dry_run), ensure_ascii=False))
                 return 0
             elif args.command == "send-feishu":
                 if not cfg["feishu_messages"].get("enabled"):

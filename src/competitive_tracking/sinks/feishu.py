@@ -13,6 +13,8 @@ from competitive_tracking.sources.feishu import select_targets, text_value
 from competitive_tracking.storage import atomic_json
 from competitive_tracking.sinks.shopee_fields import KINDS as SHOPEE_KINDS, values as shopee_values
 
+from competitive_tracking.sinks.tiktok_fields import KINDS as TIKTOK_KINDS, values as tiktok_values
+
 log = logging.getLogger(__name__)
 
 # Value type is independent of destination labels, which live in config.toml.
@@ -26,6 +28,7 @@ KINDS = {
     "updated_at": "datetime",
 }
 KINDS.update(SHOPEE_KINDS)
+KINDS.update(TIKTOK_KINDS)
 
 
 def finite_number(value):
@@ -82,8 +85,8 @@ def product_values(entry: dict) -> tuple[dict, list[str]]:
         values.update(zip(("brand", "seller", "shop_type"), brand))
     elif brand:
         warnings.append("品牌/卖家结构不是三项，保留目标表已有值")
-    if p.get("platform") == "shopee":
-        values = shopee_values(p)
+    if p.get("platform") in ("shopee", "tiktok"):
+        values = {"shopee": shopee_values, "tiktok": tiktok_values}[p["platform"]](p)
         values["captured_at"] = int(instant(p.get("captured_at")).timestamp() * 1000)
     names = list(dict.fromkeys(r['name'] for r in entry.get('tracking_records', []) if r.get('name')))
     values['custom_name'] = '、'.join(names) or None

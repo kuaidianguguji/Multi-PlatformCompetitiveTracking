@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 from competitive_tracking.integrations.feishu import FeishuClient
 from competitive_tracking.sinks.feishu import finite_number, product_values, instant
 from competitive_tracking.sinks.shopee_fields import COLUMNS as SHOPEE_COLUMNS
+from competitive_tracking.sinks.tiktok_fields import COLUMNS as TIKTOK_COLUMNS
 from competitive_tracking.sources.feishu import text_value
 from competitive_tracking.storage import atomic_json
 
@@ -62,7 +63,7 @@ def history_row(entry, written_at, columns=None, timezone_name="Asia/Shanghai"):
                 if identity:
                     owners[identity] = person.get("name") or identity
     values["owners"] = "、".join(owners.values())
-    for key in ("growth_7d", "growth_30d", "conversion", "review_rate"):
+    for key in ("growth_7d", "growth_30d", "conversion", "review_rate", "commission_rate", "creator_order_rate"):
         n = finite_number(values.get(key))
         values[key] = f"{n:.2f}%" if n is not None else ""
     if entry['product'].get('captured_at'):
@@ -102,8 +103,8 @@ class FeishuSheetsSink:
     def __init__(self, config, client=None, clock=None):
         self.config = config
         self.cfg = config["feishu_sheets"]
-        self.columns = SHOPEE_COLUMNS if self.cfg['platform'] == 'shopee' else COLUMNS
-        self.last_column = 'AB' if self.cfg['platform'] == 'shopee' else 'Y'
+        self.columns = {'mercado': COLUMNS, 'shopee': SHOPEE_COLUMNS, 'tiktok': TIKTOK_COLUMNS}[self.cfg['platform']]
+        self.last_column = {'mercado': 'Y', 'shopee': 'AB', 'tiktok': 'AG'}[self.cfg['platform']]
         self.client = client or FeishuClient(config["feishu"])
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         token = quote(self.cfg["spreadsheet_token"], safe="")

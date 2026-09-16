@@ -20,12 +20,13 @@ def load_config(path: str | Path) -> dict:
     cfg["mercado"].setdefault("login_settle_seconds", 5)
     cfg.setdefault("feishu_output", {"enabled": False})
     cfg.setdefault("feishu_sheets", {"enabled": False})
-    for section in ('shopee_feishu_output', 'shopee_feishu_sheets'):
-        target = cfg.setdefault(section, {'enabled': False, 'platform': 'shopee'})
+    for section in ('shopee_feishu_output', 'shopee_feishu_sheets', 'tiktok_feishu_output', 'tiktok_feishu_sheets'):
+        platform = section.split('_', 1)[0]
+        target = cfg.setdefault(section, {'enabled': False, 'platform': platform})
         if not target.get('enabled'):
             continue
-        if target.get('platform') != 'shopee':
-            raise ValueError(f'{section}.platform 必须为 shopee')
+        if target.get('platform') != platform:
+            raise ValueError(f'{section}.platform 必须为 {platform}')
         required = ('app_token', 'table_id') if section.endswith('output') else ('spreadsheet_token', 'sheet_id')
         if any(not target.get(key) for key in required):
             raise ValueError(f'{section} 缺少目标文档标识')
@@ -33,12 +34,14 @@ def load_config(path: str | Path) -> dict:
         if not isinstance(target.get('batch_size'), int) or not 1 <= target['batch_size'] <= maximum:
             raise ValueError(f'{section}.batch_size 必须为 1..{maximum}')
         if section.endswith('output'):
-            from competitive_tracking.sinks.shopee_fields import COLUMNS
+            from competitive_tracking.sinks.shopee_fields import COLUMNS as SHOPEE_COLUMNS
+            from competitive_tracking.sinks.tiktok_fields import COLUMNS as TIKTOK_COLUMNS
+            COLUMNS = SHOPEE_COLUMNS if platform == "shopee" else TIKTOK_COLUMNS
             if list(target.get('fields', {})) != [key for key, _ in COLUMNS]:
-                raise ValueError('Shopee 输出必须按顺序配置全部 28 个字段')
+                raise ValueError(f'{platform} 输出必须按顺序配置全部 {len(COLUMNS)} 个字段')
             labels = list(target['fields'].values())
-            if not all(isinstance(label, str) and label.strip() for label in labels) or len(set(labels)) != 28:
-                raise ValueError('Shopee 输出字段名不得为空或重复')
+            if not all(isinstance(label, str) and label.strip() for label in labels) or len(set(labels)) != len(COLUMNS):
+                raise ValueError(f'{platform} 输出字段名不得为空或重复')
         else:
             for key, minimum, maximum in (('data_start_row', 2, 1000000), ('scan_chunk_rows', 1, 5000), ('grow_rows', 1, 5000)):
                 if not isinstance(target.get(key), int) or not minimum <= target[key] <= maximum:
