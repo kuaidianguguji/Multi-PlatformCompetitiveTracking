@@ -4,27 +4,32 @@
 #space {width:1200px;position:relative} #rows {position:absolute;width:1200px;table-layout:fixed}
 td {height:94px; width:220px} .el-message-box {background:white;border:1px solid #ddd;padding:20px}
 </style></head><body>
-<div class="search-bar"><input placeholder="商品ID"><button onclick="search()">查询</button></div>
+<div class="panelDiv"><div class="mainDiv">
+<div class="flexRow"><div class="titleWidth"><div class="titleDiv"><span class="label">关键词</span></div></div><div class="flex1"><input placeholder="请输入商品标题或平台热搜词"></div></div>
+<div class="flexRow"><div class="titleWidth"><div class="titleDiv"><span class="label">商品ID</span><h5>:</h5></div></div><div class="flex1"><div class="el-input"><div class="el-input__wrapper"><input id="product-id" class="el-input__inner" placeholder="请输入"></div></div></div></div>
+<div class="flexRow"><div class="titleWidth"><div class="titleDiv"><span class="label">商品链接</span></div></div><div class="flex1"><input placeholder="请输入"></div></div>
+<button onclick="search()">查询</button>
+</div></div>
 <div class="vxe-table"><table><tr class="vxe-header--row"><th colid="name">商品名称</th><th colid="sales">销量</th><th colid="conversion">转化率</th></tr></table>
 <div class="vxe-table--main-wrapper"><div class="vxe-table--body-wrapper"><div id="space"><table id="rows"></table></div></div></div></div>
 <div class="el-pagination"><span class="el-pagination__total"></span><ul class="el-pager"></ul><button class="btn-next" onclick="next()">下一页</button></div>
 <script>
 let pageNo=1, searchId=null, favorites=new Set([101,102,103,104,105,106]);
 const scroller=document.querySelector('.vxe-table--body-wrapper');
-function ids(){ return location.hash==='#/searchItems' ? (searchId ? [searchId] : []) : [...favorites].slice((pageNo-1)*4,pageNo*4); }
+function ids(){ return location.hash==='#/allItems' ? (searchId ? [searchId] : []) : [...favorites].slice((pageNo-1)*4,pageNo*4); }
 function render(){
   const list=ids(), start=Math.floor(scroller.scrollTop/100);
   document.querySelector('#space').style.height=(list.length*100)+'px';
   const table=document.querySelector('#rows'); table.style.top=(start*100)+'px';
   table.innerHTML=list.slice(start,start+3).map(id=>`<tr class="vxe-body--row" rowid="r${id}"><td colid="name"><span>商品ID: <span class="color-primary-copy">MLB${id}</span></span><button onclick="add(${id})">${favorites.has(id)?'取消收藏':'加入收藏'}</button></td><td colid="sales">7天 : <canvas data-id="${id}"></canvas></td>${scroller.scrollLeft>200?'<td colid="conversion">9.99%</td>':''}</tr>`).join('');
   document.querySelectorAll('canvas').forEach(c=>c.getContext('2d').fillText(String(Number(c.dataset.id)*10),5,15));
-  const total=location.hash==='#/searchItems'?list.length:favorites.size;
+  const total=location.hash==='#/allItems'?list.length:favorites.size;
   document.querySelector('.el-pagination__total').textContent=`共计 ${total} 条`;
   document.querySelector('.el-pager').innerHTML=`<li class="is-active number">${pageNo}</li>`;
-  document.querySelector('.btn-next').disabled=location.hash==='#/searchItems'||pageNo*4>=total;
+  document.querySelector('.btn-next').disabled=location.hash==='#/allItems'||pageNo*4>=total;
 }
 function next(){pageNo++;scroller.scrollTop=0;render()}
-function search(){searchId=Number(document.querySelector('input').value.replace('MLB',''));pageNo=1;scroller.scrollTop=0;render()}
+function search(){searchId=Number(document.querySelector('#product-id').value.replace('MLB',''));pageNo=1;scroller.scrollTop=0;render()}
 function add(id){if(favorites.has(id))return;const d=document.createElement('div');d.className='el-message-box';d.innerHTML=`<input placeholder="请选择分组" onclick="this.nextElementSibling.style.display='block'"><ul style="display:none"><li class="el-select-dropdown__item"><span onclick="this.closest('.el-message-box').querySelector('input').value=this.textContent">每日查询分组</span></li></ul><button onclick="confirmFavorite(${id})">确认</button>`;document.body.appendChild(d)}
 function confirmFavorite(id){favorites.add(id);document.querySelector('.el-message-box').remove();render()}
 scroller.addEventListener('scroll',render);

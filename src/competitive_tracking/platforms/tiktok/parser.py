@@ -61,8 +61,10 @@ def pagination(html):
 
 def parse_html(html):
     soup = BeautifulSoup(html, 'lxml')
+    has_rows = bool(soup.select('table tbody tr.ant-table-row'))
     for dialog in soup.select('[role="dialog"]'):
-        if re.search(r'游客身份|手机号登录/注册', text(dialog)) and 'display: none' not in dialog.get('style', ''):
+        if (not has_rows and re.search(r'游客身份|手机号登录/注册', text(dialog))
+                and 'display: none' not in dialog.get('style', '')):
             raise ValueError('FastMoss 登录页面中的背景商品不是有效搜索结果')
     products = {}
     for table in soup.select('table'):

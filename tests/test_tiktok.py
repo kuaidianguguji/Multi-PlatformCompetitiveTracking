@@ -54,9 +54,10 @@ class TikTokTests(unittest.TestCase):
                                        ('1.23亿',123000000,False),('1,234',1234,False),('R$30.25万',302500,True),('$12',None,False)]:
             self.assertEqual(numeric(value,decimal_comma=comma),expected)
 
-    def test_login_background_and_id_mismatch_rejected(self):
+    def test_login_background_is_allowed_when_product_table_exists(self):
+        self.assertIn(PID, parse_html('<section role="dialog">您当前是游客身份</section>'+fixture()))
         with self.assertRaisesRegex(ValueError,'背景商品'):
-            parse_html('<section role="dialog">您当前是游客身份</section>'+fixture())
+            parse_html('<section role="dialog">您当前是游客身份</section>')
         with self.assertRaisesRegex(ValueError,'ID'):
             parse_html(fixture().replace('data-row-key="'+PID+'"','data-row-key="123"'))
         with self.assertRaisesRegex(ValueError,'表头'):
@@ -69,6 +70,8 @@ class TikTokTests(unittest.TestCase):
         self.assertTrue(pagination('<div class="ant-empty-description">暂无数据</div>')['empty'])
 
     def test_long_id_url_preserved_and_non_numeric_rejected(self):
+        self.assertEqual(urlsplit(self.c.search_url(PID)).query,
+                         'region=BR&page=1&words=' + PID)
         params = parse_qs(urlsplit(self.c.search_url(PID)).query)
         self.assertEqual(params,{'words':[PID],'page':['1'],'region':['BR']})
         with self.assertRaises(ValueError): self.c.search_url('1e18')
@@ -82,7 +85,24 @@ class TikTokTests(unittest.TestCase):
         urls=[call.args[0] for call in c.page.get.call_args_list]
         self.assertEqual(urls,['about:blank',c.search_url(PID),'about:blank',c.search_url(PID)])
         c._login.assert_called_once()
-        c._result.assert_called_once_with(PID,1,set())
+        self.assertEqual(c._result.call_args_list, [((PID, 1, set()),), ((PID, 1, set()),)])
+
+    @patch('competitive_tracking.platforms.tiktok.collector.time.sleep')
+    def test_product_result_is_used_while_login_modal_is_visible(self, sleep):
+        c = self.c
+        c.page = Mock()
+        c._wait = Mock()
+        c._needs_login = Mock(return_value=True)
+        c._login = Mock()
+        product = parse_html(fixture())[PID]
+        c._await_response = Mock(return_value={PID: {'id': PID, 'product_id': PID, 'region': 'BR'}})
+        c._result = Mock(return_value=({PID: product}, {'current': 1, 'has_next': False}))
+
+        products, info = c._query(PID, 1)
+
+        self.assertIn(PID, products)
+        self.assertEqual(info['current'], 1)
+        c._login.assert_not_called()
 
     def test_raw_response_restores_exact_numbers_and_complete_trend(self):
         raw={'id':PID,'product_id':PID,'region':'BR','currency':'BRL','day7_sold_count':28512,

@@ -60,5 +60,6 @@ class FeishuSource(FeishuClient):
         if self.cfg["view_id"]:
             params["view_id"] = self.cfg["view_id"]
         records = self.list_all(path, **params)
+        # print(f'详细记录：',records)
         log.info("飞书读取完成：%d 条记录", len(records))
         return records

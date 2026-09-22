@@ -29,7 +29,9 @@ class TikTokCollector:
     def search_url(self, pid, page=1):
         if not ID.fullmatch(pid):
             raise ValueError('TikTok 商品 ID 必须为完整数字字符串')
-        return self.cfg['search_url'] + '?' + urlencode({'page': page, 'words': pid, 'region': self.cfg['region']})
+        return self.cfg['search_url'] + '?' + urlencode([
+            ('region', self.cfg['region']), ('page', page), ('words', pid)
+        ])
 
     def _visible(self, key, *, xpath=False):
         for ele in self.page.eles(('xpath:' if xpath else 'css:') + self.sel[key], timeout=0.2):
@@ -86,12 +88,15 @@ class TikTokCollector:
         time.sleep(self.cfg['login_settle_seconds'])
 
     def _result(self, pid, page_number, expected_ids=None):
-        """Require authenticated, stable DOM plus matching query and pagination."""
+        """Require stable DOM plus matching query and pagination.
+
+        FastMoss can render a usable result table while a guest/login modal is
+        still visible.  Login state is therefore deliberately not part of the
+        result acceptance condition.
+        """
         previous, stable_since = None, time.monotonic()
         deadline = time.monotonic() + self.cfg['result_timeout_seconds']
         while time.monotonic() < deadline:
-            if self._needs_login():
-                raise LoginError('FastMoss 查询需要重新登录')
             state = self.page.run_js('''
                 const root = document.querySelector(arguments[0]);
                 const input = document.querySelector(arguments[1]);
@@ -100,7 +105,7 @@ class TikTokCollector:
             ''', self.sel['results'], self.sel['search_input'])
             params = parse_qs(urlsplit(state['url']).query)
             correct_query = (params.get('words') == [pid] and params.get('region') == [self.cfg['region']] and state['word'] == pid)
-            if self._logged_in() and correct_query and state['html'] and not state['busy']:
+            if correct_query and state['html'] and not state['busy']:
                 try:
                     products, info = parse_html(state['html']), pagination(state['html'])
                 except ValueError:
@@ -146,8 +151,6 @@ class TikTokCollector:
     def _await_response(self, pid, page_number):
         deadline = time.monotonic() + self.cfg['result_timeout_seconds']
         while time.monotonic() < deadline:
-            if self._needs_login():
-                raise LoginError('FastMoss 商品查询要求登录')
             packet = self.page.listen.wait(timeout=1, raise_err=False)
             if packet:
                 items = self._decode_response(packet, pid, page_number)
@@ -162,19 +165,19 @@ class TikTokCollector:
             self.page.listen.start(re.escape(self.cfg['search_response_path'])+r'(?:\?|$)', is_regex=True)
             self.page.get(self.search_url(pid, page_number), show_errmsg=True)
             time.sleep(self.cfg['page_wait_seconds'])
-            self._wait(lambda: self._needs_login() or self._logged_in(), 'FastMoss 登录状态未加载')
-            if self._needs_login():
-                self.page.listen.stop()
-                if attempt:
-                    raise LoginError('FastMoss 登录后重新查询仍被要求登录')
-                self._login()
-                continue  # Re-query this ID, not the next one.
+            login_visible = self._needs_login()
+            if login_visible:
+                # Do not log in merely because a modal is visible.  The page
+                # may already contain a valid result table behind it.
+                pass
             try:
                 raw = self._await_response(pid, page_number)
                 products, info = self._result(pid, page_number, set(raw))
+                if not products and login_visible:
+                    raise LoginError('FastMoss 登录后才能读取空结果')
                 return {key: attach_raw_product(product, raw[key]) for key, product in products.items()}, info
-            except LoginError:
-                if attempt:
+            except (LoginError, TimeoutError):
+                if attempt or not (login_visible or self._needs_login()):
                     raise
                 self._login()
             finally:

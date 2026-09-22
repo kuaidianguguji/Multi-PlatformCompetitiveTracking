@@ -1,5 +1,7 @@
 # CompetitiveTracking
 
+任务表字段、商品链接取 ID、监控/推送开关和填写示例，见[飞书多维表任务表使用说明](docs/任务表使用说明.md)。
+
 Python + DrissionPage 的模块化商品监控项目。当前实现 **飞书监控表读取 → Mercado/蓝鲸商品采集 → 本地 JSON 与日志 → 飞书结果多维表更新、二维表历史追加、运营消息推送**。
 
 已接入 **Shopee / Shopdora 巴西站**：任务读取 → 收藏扫描 → 选产品补充指标 / 缺失 ID 加入收藏 → JSON 与日志 → 多维表更新 + 二维表历史追加 → 对应运营人员消息推送。
@@ -50,7 +52,7 @@ Copy-Item config.example.toml config.toml  # 已有 config.toml 时不要覆盖
 5. 自动创建 `stron_token/mercado/profile`。专用 Chromium profile 保存 Cookie、localStorage 和浏览器会话信息；另外按来源域保存/恢复 sessionStorage。会话过期仍需登录。
 6. 打开收藏页，文档加载完成后固定等 10 秒。若跳转 `/login`，点击“注册/登录”，最多等 300 秒，检测到 `/home` 后额外等待 `login_settle_seconds`（默认 5 秒），再进入收藏页。
 7. 从收藏第一页开始，遍历虚拟滚动的所有行和列，合并固定图片列，自动翻页；找到全部目标后可以提前结束。若仍缺商品，则必须完成收藏扫描，才能进入搜索补全。
-8. 对收藏中缺少的 ID 进入搜索页、输入商品 ID、查询。严格对比“商品ID”，不会把被跟卖商品 ID 或第一条不匹配的搜索结果当成命中。
+8. 对收藏中缺少的 ID 进入 `#/allItems` 普通商品页，在“商品ID”输入框查询；严格对比“商品ID”，不会把被跟卖商品 ID 或第一条不匹配的搜索结果当成命中。命中后在同一页面点击“加入收藏”，按配置选择收藏分组。
 9. 搜索命中后采集商品，点击该行“加入收藏”。等待 2 秒及异步弹窗出现，选择“每日查询分组”，点击“确认”，通过按钮变为“取消收藏”验证成功。已收藏的不重复添加。请提前创建该分组。
 10. 输出 JSON，并在控制台和轮转日志中打印每个命中商品。商品错误、收藏失败、数据缺失均留下状态和原因。
 11. 如果启用 `[feishu_output]`，将有效商品同步到配置的结果表。先保存本地采集结果，再写飞书；写入失败不会丢失采集数据，可以使用已有 JSON 补写。
@@ -121,9 +123,9 @@ python -m competitive_tracking parse-html "C:\path\商品结果.html" --platform
 ```
 
 1. 最大化专用浏览器，使用 `stron_token/tiktok/profile` 保存 Cookie/localStorage，另保存同源 sessionStorage。
-2. 逐个构造 `https://www.fastmoss.com/zh/e-commerce/search?page=1&words=商品ID&region=BR`；有游客弹窗则点击“登录” → “手机号登录/注册” → “密码登录”，填写凭据并提交。
+2. 逐个构造 `https://www.fastmoss.com/zh/e-commerce/search?region=BR&page=1&words=商品ID`；如果页面已经有商品结果，即使同时显示登录弹窗也直接读取结果，只有没有可读结果时才进入登录流程。
 3. 登录成功后先重新打开**当前商品**，再继续下一个 ID；不会跳过触发登录的首个商品。中途登录失败停止其余查询并记录失败，保留已完成商品。
-4. 只监听页面正常发起的 `/api/goods/V2/search` 响应。核对本次商品 ID、BR、页码、接口成功状态，再等待 DOM ID 集合与响应一致、分页及字段稳定。搜索框值、行 ID、商品详情链接 ID 同时核验；登录弹窗后的背景商品不作为结果。
+4. 只监听页面正常发起的 `/api/goods/V2/search` 响应。核对本次商品 ID、BR、页码、接口成功状态，再等待 DOM ID 集合与响应一致、分页及字段稳定。搜索框值、行 ID、商品详情链接 ID 同时核验；只要商品结果表已加载，即使登录弹窗仍显示也可以读取。
 5. 读取整个表格 DOM，包含横向滚动视野外的列；找不到目标时扫描后续页，重复页、超过上限或接口失败记为错误，不当作未找到。
 6. 逐商品打印 JSON，结束后保存 `data/run_*.json`、`data/latest.json` 并关闭专用浏览器。`once --platform tiktok` 不调用 Mercado/Shopee 的远程输出。
 

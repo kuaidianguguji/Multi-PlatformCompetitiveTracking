@@ -21,7 +21,7 @@ def main():
         cfg["mercado"].update(page_wait_seconds=0.1, result_settle_seconds=0.1,
                               scroll_wait_seconds=0.05, poll_seconds=0.05, favorite_dialog_wait_seconds=0.1)
         url = (root / "tests/fixtures/browser.html").as_uri()
-        for key, route in [("favorite_url", "favorite"), ("login_url", "login"), ("home_url", "home"), ("search_url", "searchItems")]:
+        for key, route in [("favorite_url", "favorite"), ("login_url", "login"), ("home_url", "home"), ("search_url", "allItems")]:
             cfg["mercado"][key] = url + "#/" + route
         result = MercadoCollector(cfg).collect([TrackingTarget("mercado", "MLB106"), TrackingTarget("mercado", "MLB999")])
         for pid, origin in [("MLB106", "favorite"), ("MLB999", "search")]:

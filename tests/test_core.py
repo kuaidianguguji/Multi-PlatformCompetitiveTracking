@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 import requests
 
 from competitive_tracking.config import load_config
-from competitive_tracking.platforms.mercado.parser import parse_html, pagination
+from competitive_tracking.platforms.mercado.parser import ID, parse_html, pagination
 from competitive_tracking.platforms.mercado.collector import MercadoCollector, xpath_literal
 from competitive_tracking.runner import next_run, run_once
 from competitive_tracking.sources.feishu import FeishuSource, select_targets
@@ -30,6 +30,11 @@ def record(pid="MLB123", **kwargs):
 
 
 class FilteringTests(unittest.TestCase):
+    def test_mercado_accepts_four_letter_mlbu_id(self):
+        self.assertTrue(ID.fullmatch("MLBU4813895273"))
+        self.assertTrue(ID.fullmatch("MLB6984707226"))
+        self.assertFalse(ID.fullmatch("MLBU"))
+
     def test_exact_monitor_and_nonempty_recipients(self):
         rows = [record(), record("MLB124", 监控开关=True), record("MLB125", 监控开关="关闭"),
                 record("", 商品ID=[]), record("MLB126", 数据推送人=[]), record("MLB127", 平台="shopee"),
@@ -181,14 +186,26 @@ class CollectorTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "headless"):
             collector._login()
 
-    def test_search_does_not_accept_first_mismatched_product(self):
+    def test_search_uses_first_result_even_when_id_differs(self):
         collector = self.make()
         collector._navigate = Mock()
         collector._element = Mock()
         collector._snapshot = Mock(return_value="")
         collector._wait = Mock()
         collector._scan_page = Mock(return_value={"MLB999": {"product_id": "MLB999"}})
-        self.assertIsNone(collector._search("MLB123"))
+        self.assertEqual(collector._search("MLB123"), {"product_id": "MLB999"})
+        collector._navigate.assert_called_once_with("https://xp.lingdongsz.com/#/allItems")
+        self.assertEqual(collector._element.call_args_list[0].args[0], collector.selectors["search_input"])
+        self.assertEqual(collector._element.call_args_list[1].args[0], collector.selectors["search_button"])
+
+    def test_all_items_selectors_distinguish_product_id_from_other_inputs(self):
+        from lxml import html
+        page = html.fromstring((ROOT / "tests/fixtures/browser.html").read_text(encoding="utf-8"))
+        selectors = self.make().selectors
+        inputs = page.xpath(selectors["search_input"])
+        self.assertEqual(len(inputs), 1)
+        self.assertEqual(inputs[0].get("id"), "product-id")
+        self.assertEqual(len(page.xpath(selectors["search_button"])), 1)
 
     def test_wait_timeout(self):
         with self.assertRaisesRegex(TimeoutError, "not ready"):

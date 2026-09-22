@@ -83,8 +83,8 @@ favorite_url = "https://xp.lingdongsz.com/#/favorite"
 login_url = "https://xp.lingdongsz.com/#/login"
 # 手动登录成功的目标地址；检测到 /home 后再进入收藏页。
 home_url = "https://xp.lingdongsz.com/#/home"
-# 收藏页找不到商品时使用的搜索页地址。
-search_url = "https://xp.lingdongsz.com/#/searchItems"
+# 收藏页找不到商品时使用的普通商品搜索页地址；搜索和加入收藏都在 allItems 页面完成。
+search_url = "https://xp.lingdongsz.com/#/allItems"
 # 每次路由导航在文档加载完成后固定等待；按当前要求默认 10 秒。
 page_wait_seconds = 10
 # 等待人工登录最长时间；默认 5 分钟。
@@ -111,10 +111,10 @@ favorite_group = "每日查询分组"
 [mercado.selectors]
 # 登录按钮 XPath；修正请求中重复粘贴造成的引号/括号错误。
 login_button = '//span[contains(@class,"layout-navbars-breadcrumb-user-link")][.//span[normalize-space(.)="注册/登录"]]'
-# 搜索商品 ID 输入框 XPath。
-search_input = '//div[@class="search-bar"]//input[contains(@placeholder,"商品ID")]'
-# 搜索查询按钮 XPath。
-search_button = '//div[@class="search-bar"]//button[contains(normalize-space(.),"查询")]'
+# allItems 页面“商品ID”对应的输入框 XPath；按字段标签定位，不依赖动态 input id。
+search_input = '//span[normalize-space(.)="商品ID"]/ancestor::div[contains(@class,"flexRow")][1]//input'
+# allItems 页面查询按钮 XPath。
+search_button = '//button[normalize-space(.)="查询"]'
 # Element Plus 的下一页按钮 CSS；同时检查 disabled、aria-disabled 和当前页变化。
 next_button = '.el-pagination .btn-next'
 # 收藏弹窗分组选择输入框 XPath；只在弹窗出现后寻找。

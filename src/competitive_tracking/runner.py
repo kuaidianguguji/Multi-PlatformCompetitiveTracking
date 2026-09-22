@@ -38,6 +38,7 @@ def run_once(cfg, source=None, registry=None, sink=None) -> dict:
         records = source.read_records()
         for platform in cfg["app"]["platforms"]:
             targets = select_targets(records, cfg["feishu"]["fields"], platform)
+            print(f"清洗后的任务数据：平台={platform}，targets={targets}", flush=True)
             if not targets:
                 result["platforms"][platform] = {"status": "skipped", "reason": "没有符合筛选条件的记录"}
                 log.info("%s 没有符合条件的数据，进入下一个平台", platform)

@@ -206,9 +206,11 @@ class MercadoCollector:
                 snapshot != previous and "共计 0 条" in self.page.html)
         self._wait(changed, f"搜索 {pid} 结果未完成更新")
         time.sleep(self.cfg["result_settle_seconds"])
-        # Only accept exact 商品ID; never blindly take the first search result.
+        # allItems may return a different 商品ID than the requested one.  The
+        # site search result itself is authoritative for this workflow, so use
+        # the first parsed result when at least one result exists.
         results = self._scan_page()
-        return results.get(pid)
+        return next(iter(results.values()), None)
 
     def _row(self, pid: str, *, timeout=None):
         # Scope favorite actions to the matched product row.
@@ -276,13 +278,16 @@ class MercadoCollector:
                     if product is None:
                         product = self._search(pid)
                     if product is None:
-                        results[target.key] = {"status": "not_found", "error": "搜索结果中没有精确匹配的商品ID"}
+                        results[target.key] = {"status": "not_found", "error": "搜索结果为空"}
                         log.warning("未找到 %s", target.key)
                         continue
                     favorite_status = "existing"
                     if origin == "search":
                         try:
-                            favorite_status = self._favorite(pid)
+                            # allItems may return a different product ID than
+                            # the search term; favorite the ID from the row we
+                            # actually captured.
+                            favorite_status = self._favorite(product.get("product_id", pid))
                         except Exception as exc:
                             favorite_status = "failed"
                             product["warnings"].append(f"加入收藏失败：{type(exc).__name__}: {exc}")

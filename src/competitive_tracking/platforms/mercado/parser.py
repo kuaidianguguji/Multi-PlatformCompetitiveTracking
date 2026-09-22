@@ -5,7 +5,10 @@ import re
 
 from bs4 import BeautifulSoup
 
-ID = re.compile(r"^ML[A-Z]\d+$")
+# Mercado IDs use the ML prefix plus one or two site/type letters.  Some
+# valid IDs in the source system use the four-letter form MLBU, for example
+# MLBU4813895273, so accepting only MLB/MLM/MLA is too restrictive.
+ID = re.compile(r"^ML[A-Z]{1,2}\d+$")
 NUMBER = r"[-+]?\d[\d,]*(?:\.\d+)?"
 
 
