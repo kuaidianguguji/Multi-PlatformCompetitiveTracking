@@ -52,7 +52,7 @@ Copy-Item config.example.toml config.toml  # 已有 config.toml 时不要覆盖
 5. 自动创建 `stron_token/mercado/profile`。专用 Chromium profile 保存 Cookie、localStorage 和浏览器会话信息；另外按来源域保存/恢复 sessionStorage。会话过期仍需登录。
 6. 打开收藏页，文档加载完成后固定等 10 秒。若跳转 `/login`，点击“注册/登录”，最多等 300 秒，检测到 `/home` 后额外等待 `login_settle_seconds`（默认 5 秒），再进入收藏页。
 7. 从收藏第一页开始，遍历虚拟滚动的所有行和列，合并固定图片列，自动翻页；找到全部目标后可以提前结束。若仍缺商品，则必须完成收藏扫描，才能进入搜索补全。
-8. 对收藏中缺少的 ID 进入 `#/allItems` 普通商品页，在“商品ID”输入框查询；严格对比“商品ID”，不会把被跟卖商品 ID 或第一条不匹配的搜索结果当成命中。命中后在同一页面点击“加入收藏”，按配置选择收藏分组。
+8. 对收藏中缺少的 ID 进入 `#/allItems` 普通商品页，在“商品ID”输入框查询；只要结果表有商品，就采用第一条结果，不要求返回 ID 与搜索词完全一致。命中后在同一页面点击“加入收藏”，按实际返回行选择收藏分组。
 9. 搜索命中后采集商品，点击该行“加入收藏”。等待 2 秒及异步弹窗出现，选择“每日查询分组”，点击“确认”，通过按钮变为“取消收藏”验证成功。已收藏的不重复添加。请提前创建该分组。
 10. 输出 JSON，并在控制台和轮转日志中打印每个命中商品。商品错误、收藏失败、数据缺失均留下状态和原因。
 11. 如果启用 `[feishu_output]`，将有效商品同步到配置的结果表。先保存本地采集结果，再写飞书；写入失败不会丢失采集数据，可以使用已有 JSON 补写。
@@ -125,7 +125,7 @@ python -m competitive_tracking parse-html "C:\path\商品结果.html" --platform
 1. 最大化专用浏览器，使用 `stron_token/tiktok/profile` 保存 Cookie/localStorage，另保存同源 sessionStorage。
 2. 逐个构造 `https://www.fastmoss.com/zh/e-commerce/search?region=BR&page=1&words=商品ID`；如果页面已经有商品结果，即使同时显示登录弹窗也直接读取结果，只有没有可读结果时才进入登录流程。
 3. 登录成功后先重新打开**当前商品**，再继续下一个 ID；不会跳过触发登录的首个商品。中途登录失败停止其余查询并记录失败，保留已完成商品。
-4. 只监听页面正常发起的 `/api/goods/V2/search` 响应。核对本次商品 ID、BR、页码、接口成功状态，再等待 DOM ID 集合与响应一致、分页及字段稳定。搜索框值、行 ID、商品详情链接 ID 同时核验；只要商品结果表已加载，即使登录弹窗仍显示也可以读取。
+4. 优先读取页面结果；页面有商品时，即使登录弹窗仍显示也可以读取。若页面结果需要接口补充，则只监听页面正常发起的 `/api/goods/V2/search` 响应，核对本次商品 ID、BR、页码和接口状态，并将接口完整数值合并到页面字段。
 5. 读取整个表格 DOM，包含横向滚动视野外的列；找不到目标时扫描后续页，重复页、超过上限或接口失败记为错误，不当作未找到。
 6. 逐商品打印 JSON，结束后保存 `data/run_*.json`、`data/latest.json` 并关闭专用浏览器。`once --platform tiktok` 不调用 Mercado/Shopee 的远程输出。
 
@@ -141,7 +141,7 @@ JSON 保留以下数据供后续选字段：
 | 趋势 | `sales_trend` 保存日期与逐日销量；`raw_product.trend` 保留来源原值，不将来源可能为占位的日销售额 0 擅自解释为真实销售额 |
 | 审核信息 | `raw_fields` 每列文本、完整标题、链接、图片；`display_values` 页面约数；`raw_product` 本次商品查询对象；`search_url`、`captured_at`、`warnings` |
 
-接口与 DOM 的商品 ID、国家必须相同。接口完整数值优先，未验证的其他字段仅保留原始值；`global` 中换算的其他币种不混入 BRL。只保存商品对象，不保存响应外层的登录标识/IP、请求头、Cookie、密码。静态 HTML 缺少完整 Canvas 曲线及接口数据时保留警告；登录 HTML 中的背景商品会被拒绝解析。
+接口与 DOM 的商品 ID、国家必须相同。接口完整数值优先，未验证的其他字段仅保留原始值；`global` 中换算的其他币种不混入 BRL。只保存商品对象，不保存响应外层的登录标识/IP、请求头、Cookie、密码。静态 HTML 缺少完整 Canvas 曲线及接口数据时保留警告；登录弹窗覆盖但结果表已加载时仍保留商品数据。
 
 TikTok 消息由 `[feishu_messages]` 的 `enabled` 和 `platforms` 控制，与两张表的写入开关独立。
 
@@ -405,7 +405,7 @@ python scripts/browser_smoke.py
 python -m competitive_tracking parse-html "C:\path\蓝鲸选品.html" --product-id MLB6984707226 --output data/offline.json
 ```
 
-浏览器集成测试只打开自建本地页面，测试临时 profile、Canvas、虚拟行/列、两页收藏、ID 精确匹配、加入收藏弹窗，不访问账户。CI 执行单元测试，浏览器测试需本机安装 Chromium。
+浏览器集成测试只打开自建本地页面，测试临时 profile、Canvas、虚拟行/列、两页收藏、结果读取、加入收藏弹窗，不访问账户。CI 执行单元测试，浏览器测试需本机安装 Chromium。
 
 正式运行前，用实际飞书表和蓝鲸账号执行 `once`，检查 `latest.json` 的状态、warnings、商品数量和来源。真实站点 DOM、账号权限、所选国家/分组仍需联调；当前保留浏览器中的站点选择，不自动切换国家。多国家监控需确保当前站点能搜索对应 ID。
 

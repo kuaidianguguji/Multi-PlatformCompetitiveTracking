@@ -207,6 +207,23 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(inputs[0].get("id"), "product-id")
         self.assertEqual(len(page.xpath(selectors["search_button"])), 1)
 
+    def test_search_alias_keeps_task_identity_and_favorites_actual_row(self):
+        from competitive_tracking.models import TrackingTarget
+        collector = self.make()
+        collector.session_factory = Mock()
+        collector.session_factory.return_value.__enter__ = Mock(return_value=collector.page)
+        collector.session_factory.return_value.__exit__ = Mock(return_value=False)
+        collector._login = Mock()
+        collector._favorites = Mock(return_value={})
+        collector._search = Mock(return_value={'platform': 'mercado', 'product_id': 'MLB7455454002', 'warnings': []})
+        collector._favorite = Mock(return_value='added')
+        result = collector.collect([TrackingTarget('mercado', 'MLBU4813895273')])
+        entry = result['mercado:MLBU4813895273']
+        self.assertEqual(entry['status'], 'ok')
+        self.assertEqual(entry['product']['product_id'], 'MLBU4813895273')
+        self.assertEqual(entry['product']['source_product_id'], 'MLB7455454002')
+        collector._favorite.assert_called_once_with('MLB7455454002')
+
     def test_wait_timeout(self):
         with self.assertRaisesRegex(TimeoutError, "not ready"):
             self.make()._wait(lambda: False, "not ready")

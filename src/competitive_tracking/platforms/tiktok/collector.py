@@ -87,7 +87,7 @@ class TikTokCollector:
             raise LoginError(str(exc)) from None
         time.sleep(self.cfg['login_settle_seconds'])
 
-    def _result(self, pid, page_number, expected_ids=None):
+    def _result(self, pid, page_number, expected_ids=None, *, timeout=None):
         """Require stable DOM plus matching query and pagination.
 
         FastMoss can render a usable result table while a guest/login modal is
@@ -95,7 +95,7 @@ class TikTokCollector:
         result acceptance condition.
         """
         previous, stable_since = None, time.monotonic()
-        deadline = time.monotonic() + self.cfg['result_timeout_seconds']
+        deadline = time.monotonic() + (self.cfg['result_timeout_seconds'] if timeout is None else timeout)
         while time.monotonic() < deadline:
             state = self.page.run_js('''
                 const root = document.querySelector(arguments[0]);
@@ -124,7 +124,7 @@ class TikTokCollector:
             else:
                 previous = None
             time.sleep(self.cfg['poll_seconds'])
-        raise TimeoutError('FastMoss 本次查询的登录、商品 ID、分页或表格未稳定，拒绝读取旧结果')
+        raise TimeoutError('FastMoss 本次查询的商品 ID、分页或表格未稳定，拒绝读取旧结果')
 
     def _decode_response(self, packet, pid, page_number):
         body = packet.response.body
@@ -165,23 +165,45 @@ class TikTokCollector:
             self.page.listen.start(re.escape(self.cfg['search_response_path'])+r'(?:\?|$)', is_regex=True)
             self.page.get(self.search_url(pid, page_number), show_errmsg=True)
             time.sleep(self.cfg['page_wait_seconds'])
-            login_visible = self._needs_login()
-            if login_visible:
-                # Do not log in merely because a modal is visible.  The page
-                # may already contain a valid result table behind it.
-                pass
             try:
-                raw = self._await_response(pid, page_number)
-                products, info = self._result(pid, page_number, set(raw))
+                # A guest page can still render the requested result table.
+                # Probe the DOM first so a visible login modal never imposes
+                # the full API timeout when the result is already available.
+                login_visible = self._needs_login()
+                if login_visible:
+                    try:
+                        products, info = self._result(
+                            pid, page_number, None,
+                            timeout=max(self.cfg['result_settle_seconds'] + 1, self.cfg['poll_seconds'] * 4),
+                        )
+                    except TimeoutError:
+                        products = info = None
+                    if products:
+                        for product in products.values():
+                            product['warnings'].append('登录弹窗存在，但页面结果可读；未执行登录')
+                        return products, info
+                try:
+                    raw = self._await_response(pid, page_number)
+                except (RuntimeError, TimeoutError):
+                    # A missing/failed API response must not discard readable
+                    # results from this fresh document and matching query.
+                    raw = None
+                products, info = self._result(pid, page_number, None if raw is None else set(raw))
                 if not products and login_visible:
-                    raise LoginError('FastMoss 登录后才能读取空结果')
+                    raise LoginError('FastMoss 没有可读商品结果，需要登录')
+                if raw is None:
+                    for product in products.values():
+                        product['warnings'].append('未取得可用商品接口响应；仅保留本次页面可读字段')
+                    return products, info
                 return {key: attach_raw_product(product, raw[key]) for key, product in products.items()}, info
-            except (LoginError, TimeoutError):
-                if attempt or not (login_visible or self._needs_login()):
+            except (LoginError, TimeoutError) as exc:
+                if not self._needs_login():
                     raise
-                self._login()
+                if attempt:
+                    raise LoginError('FastMoss 登录后仍没有可读商品结果') from exc
             finally:
                 self.page.listen.stop()
+            self._login()  # Retry this same product after login, never skip it.
         raise LoginError('FastMoss 登录后无法读取本次商品结果')
 
     def _search(self, pid):

@@ -192,6 +192,10 @@ class MercadoCollector:
         raise RuntimeError("收藏分页达到 max_pages，仍有下一页")
 
     def _search(self, pid: str) -> dict | None:
+        # Reload a fresh search document so accepting the first result cannot
+        # accidentally reuse the preceding product's SPA table or filters.
+        if not self.page.get('about:blank', show_errmsg=True):
+            raise RuntimeError('搜索页重置失败')
         self._navigate(self.cfg["search_url"])
         field = self._element(self.selectors["search_input"])
         field.input(pid, clear=True)
@@ -295,6 +299,9 @@ class MercadoCollector:
                             self.page.refresh()
                     product.update({"origin": origin, "favorite_status": favorite_status,
                                     "captured_at": datetime.now(timezone.utc).isoformat()})
+                    # Keep task identity stable for Feishu updates and recipients;
+                    # retain the actual result ID separately for traceability.
+                    product = dict(product, source_product_id=product["product_id"], product_id=pid)
                     results[target.key] = {"status": "partial" if product["warnings"] else "ok", "product": product}
                     log.info("商品数据 %s %s", target.key, json.dumps(product, ensure_ascii=False))
                 except Exception as exc:

@@ -3,7 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import tempfile
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, call
 from urllib.parse import parse_qs, urlsplit
 
 from competitive_tracking.config import load_config
@@ -79,13 +79,14 @@ class TikTokTests(unittest.TestCase):
     @patch('competitive_tracking.platforms.tiktok.collector.time.sleep')
     def test_login_requeries_current_id_before_next(self, sleep):
         c=self.c; c.page=Mock(); c._wait=Mock(); c._login=Mock()
-        c._needs_login=Mock(side_effect=[True,False]); c._result=Mock(return_value=({},{}))
+        c._needs_login=Mock(side_effect=[True,True,False]); c._result=Mock(return_value=({},{}))
         c._await_response=Mock(return_value={})
         c._query(PID,1)
         urls=[call.args[0] for call in c.page.get.call_args_list]
         self.assertEqual(urls,['about:blank',c.search_url(PID),'about:blank',c.search_url(PID)])
         c._login.assert_called_once()
-        self.assertEqual(c._result.call_args_list, [((PID, 1, set()),), ((PID, 1, set()),)])
+        self.assertEqual(c._result.call_args_list[0].args, (PID, 1, None))
+        self.assertEqual(c._result.call_args_list[1:], [call(PID, 1, set()), call(PID, 1, set())])
 
     @patch('competitive_tracking.platforms.tiktok.collector.time.sleep')
     def test_product_result_is_used_while_login_modal_is_visible(self, sleep):
@@ -103,6 +104,35 @@ class TikTokTests(unittest.TestCase):
         self.assertIn(PID, products)
         self.assertEqual(info['current'], 1)
         c._login.assert_not_called()
+
+    def test_stable_dom_result_requires_no_login_state(self):
+        self.cfg['tiktok'].update(result_timeout_seconds=.2, poll_seconds=.001, result_settle_seconds=.001)
+        c = self.c
+        c.page = Mock()
+        c._needs_login = Mock(side_effect=AssertionError('must not gate readable results'))
+        c._logged_in = Mock(side_effect=AssertionError('must not require authenticated header'))
+        c.page.run_js.return_value = {'html': fixture(), 'word': PID, 'busy': False, 'url': c.search_url(PID)}
+        products, info = c._result(PID, 1)
+        self.assertIn(PID, products)
+        self.assertEqual(info['current'], 1)
+
+    @patch('competitive_tracking.platforms.tiktok.collector.time.sleep')
+    def test_missing_response_uses_dom_without_login(self, sleep):
+        for error in (TimeoutError('no response'), RuntimeError('HTTP 403')):
+            with self.subTest(error=type(error).__name__):
+                c = self.c
+                c.page = Mock()
+                c._login = Mock()
+                c._needs_login = Mock(return_value=True)
+                c._await_response = Mock(side_effect=error)
+                c._result = Mock(return_value=(parse_html(fixture()), {'current': 1, 'has_next': False}))
+                products, _ = c._query(PID, 1)
+                self.assertIn(PID, products)
+                self.assertTrue(any('登录弹窗存在' in w for w in products[PID]['warnings']))
+                c._await_response.assert_not_called()
+                c._result.assert_called_once()
+                c._login.assert_not_called()
+                c.page.listen.stop.assert_called_once()
 
     def test_raw_response_restores_exact_numbers_and_complete_trend(self):
         raw={'id':PID,'product_id':PID,'region':'BR','currency':'BRL','day7_sold_count':28512,
