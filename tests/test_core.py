@@ -97,6 +97,12 @@ class FeishuTests(unittest.TestCase):
             client._request("GET", "/test")
         self.assertEqual(session.request.call_count, 1)
 
+    def test_message_availability_error_explains_app_scope(self):
+        client, session = self.make([response({"code": 230013}, 400)])
+        with self.assertRaisesRegex(RuntimeError, "可用范围添加该用户"):
+            client._request("POST", "/im/v1/messages")
+        self.assertEqual(session.request.call_count, 1)
+
     def test_expired_token_is_refreshed_once(self):
         client, session = self.make([
             response({"code": 0, "tenant_access_token": "old", "expire": 7200}), response({"code": 99991663}),

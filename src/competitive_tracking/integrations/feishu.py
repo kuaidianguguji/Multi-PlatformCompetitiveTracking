@@ -44,6 +44,8 @@ class FeishuClient:
                         detail = f" code={code}" if code is not None else ""
                         if scopes:
                             detail += "，所需权限：" + ", ".join(scopes)
+                        if code == 230013:
+                            detail += "；机器人对该用户没有可用性，请在应用版本管理的可用范围添加该用户并发布"
                         raise FeishuAPIError(f"飞书 HTTP {response.status_code}{detail}，请检查应用权限和表配置", code=code)
                     try:
                         return response.json()
