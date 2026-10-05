@@ -87,6 +87,8 @@ home_url = "https://xp.lingdongsz.com/#/home"
 search_url = "https://xp.lingdongsz.com/#/allItems"
 # 每次路由导航在文档加载完成后固定等待；按当前要求默认 10 秒。
 page_wait_seconds = 10
+# 检测到更新弹窗并点击“马上更新”后，等待按钮消失的最长时间。
+upgrade_wait_seconds = 30
 # 等待人工登录最长时间；默认 5 分钟。
 manual_login_timeout_seconds = 300
 # 手动登录成功、检测到 /home 后的独立稳定等待，再跳转收藏页；可设 3～5 秒对照测试，0 表示禁用。
@@ -121,6 +123,8 @@ next_button = '.el-pagination .btn-next'
 group_input = '//input[contains(@placeholder,"请选择分组")]'
 # 收藏弹窗确认按钮 XPath。
 group_confirm = '//div[contains(concat(" ",normalize-space(@class)," ")," el-message-box ")]//button[normalize-space(.)="确认"]'
+# 蓝鲸更新弹窗的“马上更新”按钮；弹窗不存在时不会影响页面流程。
+upgrade_button = '//div[@class="upgrade-dialog"]//button[contains(@class, "el-button--primary")]//span'
 
 [feishu_output]
 # 是否在 once/serve 采集后自动写入结果表；启用前填写下面的目标表标识。

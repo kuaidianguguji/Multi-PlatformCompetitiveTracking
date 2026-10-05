@@ -18,6 +18,7 @@ def load_config(path: str | Path) -> dict:
     cfg["root"] = path.parent
     # 兼容尚未添加此配置项的旧 config.toml。
     cfg["mercado"].setdefault("login_settle_seconds", 5)
+    cfg["mercado"].setdefault("upgrade_wait_seconds", 30)
     cfg.setdefault("feishu_output", {"enabled": False})
     cfg.setdefault("feishu_sheets", {"enabled": False})
     for section in ('shopee_feishu_output', 'shopee_feishu_sheets', 'tiktok_feishu_output', 'tiktok_feishu_sheets'):
@@ -142,7 +143,7 @@ def load_config(path: str | Path) -> dict:
         for key in keys:
             if cfg[section][key] <= 0:
                 raise ValueError(f"{section}.{key} 必须大于 0")
-    for key in ("page_wait_seconds", "login_settle_seconds", "result_settle_seconds", "scroll_wait_seconds", "favorite_dialog_wait_seconds"):
+    for key in ("page_wait_seconds", "login_settle_seconds", "result_settle_seconds", "scroll_wait_seconds", "favorite_dialog_wait_seconds", "upgrade_wait_seconds"):
         if cfg["mercado"][key] < 0:
             raise ValueError(f"mercado.{key} 不得为负数")
     if not 0 < cfg["mercado"]["scroll_fraction"] < 1:

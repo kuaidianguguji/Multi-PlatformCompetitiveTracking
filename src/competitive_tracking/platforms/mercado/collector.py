@@ -56,6 +56,44 @@ class MercadoCollector:
         if not self.page.wait.doc_loaded(timeout=self.config["browser"]["page_load_timeout_seconds"]):
             raise TimeoutError("文档加载超时")
         time.sleep(self.cfg["page_wait_seconds"])
+        self._dismiss_upgrade_dialog()
+
+    def _dismiss_upgrade_dialog(self):
+        """Dismiss the optional Blue Whale upgrade prompt after navigation.
+
+        The prompt is not present on every visit, so its absence is a normal
+        condition.  When it appears, clicking the primary button may trigger
+        an asynchronous update; wait until that button is removed or hidden
+        before allowing page parsing to continue.
+        """
+        selector = self.selectors.get("upgrade_button")
+        if not selector:
+            return
+        button = self.page.ele("xpath:" + selector, timeout=0.2)
+        if not button:
+            return
+        try:
+            if not button.states.is_displayed:
+                return
+        except Exception:
+            # Some lightweight test doubles and older DrissionPage versions
+            # do not expose states; the successful lookup is sufficient.
+            pass
+        log.info("检测到蓝鲸更新弹窗，点击“马上更新”")
+        button.click()
+
+        def gone():
+            current = self.page.ele("xpath:" + selector, timeout=0.2)
+            if not current:
+                return True
+            try:
+                return not current.states.is_displayed
+            except Exception:
+                return False
+
+        self._wait(gone, "蓝鲸更新弹窗“马上更新”按钮未消失",
+                   self.cfg["upgrade_wait_seconds"])
+        log.info("蓝鲸更新弹窗已关闭")
 
     def _element(self, xpath):
         element = self.page.ele("xpath:" + xpath, timeout=self.timeout)

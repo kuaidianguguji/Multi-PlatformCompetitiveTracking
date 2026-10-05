@@ -184,6 +184,15 @@ class CollectorTests(unittest.TestCase):
         collector._element.return_value.click.assert_called_once()
         self.assertEqual(collector._navigate.call_count, 2)
 
+    def test_upgrade_dialog_is_clicked_and_waited_out(self):
+        collector = self.make()
+        button = Mock()
+        button.states.is_displayed = True
+        collector.page.ele.side_effect = [button, None]
+        collector.cfg["upgrade_wait_seconds"] = 0.1
+        collector._dismiss_upgrade_dialog()
+        button.click.assert_called_once()
+
     def test_headless_requires_login_is_explicit_error(self):
         collector = self.make()
         collector.config["browser"]["headless"] = True

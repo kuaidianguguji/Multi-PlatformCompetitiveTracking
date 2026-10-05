@@ -159,11 +159,37 @@ class FeishuSheetsSink:
         for col, (key, label) in enumerate(self.columns):
             actual = normalize("".join(str(row[col]) for row in rows if not blank(row[col])))
             allowed = {normalize(label)}
+            # Existing sheets may use a two-level merged header.  Feishu
+            # returns the parent label before the child label, e.g. “销量日”
+            # while the configured flat label is “日销量”.
             if key.startswith("sales_"):
                 period = key.removeprefix("sales_")
-                allowed.add("销量总" if period == "total" else "销量" + period.replace("d", "天"))
+                period_label = {"daily": "日", "monthly": "月", "yesterday": "昨日",
+                                "7d": "近7天", "14d": "近14天", "28d": "近28天",
+                                "total": "总"}.get(period)
+                if period_label:
+                    allowed.add(normalize("销量" + period_label))
+                # Mercado's historical sheet uses labels such as “销量7天”
+                # for the 7/30/60/90-day columns.
+                if period.endswith("d"):
+                    allowed.add(normalize("销量" + period.replace("d", "天")))
+            if key.startswith("revenue_"):
+                period = key.removeprefix("revenue_").removesuffix("_brl")
+                period_label = {"daily": "日", "monthly": "月", "yesterday": "昨日",
+                                "7d": "近7天", "14d": "近14天", "28d": "近28天",
+                                "total": "总"}.get(period)
+                if period_label:
+                    allowed.add(normalize("销售额BRL" + period_label))
+                if period.endswith("d"):
+                    allowed.add(normalize("销售额" + period.replace("d", "天")))
             if key.startswith("growth_"):
                 allowed.add("销量变化环比" + key.removeprefix("growth_").replace("d", "天"))
+            # TikTok historical sheets use parent-first merged labels such as
+            # “价格BRL当前” and “价格BRL原价”.
+            if key == "price_brl":
+                allowed.add(normalize("价格BRL当前"))
+            elif key == "original_price_brl":
+                allowed.add(normalize("价格BRL原价"))
             if actual not in allowed:
                 raise ValueError(f"二维表第 {col + 1} 列表头不匹配：期望 {label}，实际 {actual}")
 
