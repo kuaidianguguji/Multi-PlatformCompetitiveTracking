@@ -1,0 +1,13 @@
+# Install the project and its runtime dependencies with:
+#   python -m pip install -r requirements.txt
+# Python 3.11 or newer is required (see pyproject.toml).
+
+DrissionPage==4.1.1.4
+beautifulsoup4>=4.12,<5
+lxml>=5,<7
+requests>=2.32,<3
+tzdata>=2024.1
+
+# Install CompetitiveTracking itself so `python -m competitive_tracking`
+# and the `competitive-tracking` command work from any directory.
+-e .

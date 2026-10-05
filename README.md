@@ -14,9 +14,13 @@ Python + DrissionPage 的模块化商品监控项目。当前实现 **飞书监�
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e .
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 Copy-Item config.example.toml config.toml  # 已有 config.toml 时不要覆盖
 ```
+
+`requirements.txt` 包含运行依赖并以可编辑方式安装当前项目；如果已经使用
+`python -m pip install -e .`，不需要重复安装。部署到其他电脑时，请使用 Python 3.11
+或更高版本，并安装 Chrome 或 Edge 浏览器。
 
 编辑 `config.toml` 的 `[feishu]`：
 
