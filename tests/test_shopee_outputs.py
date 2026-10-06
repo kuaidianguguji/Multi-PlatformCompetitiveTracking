@@ -118,6 +118,29 @@ class ShopeeOutputTests(unittest.TestCase):
         self.assertEqual(writes[-1]['range'], sheet+'!A4:AB4')
         self.assertEqual(cells[2][0], 'old-product')
 
+    def test_real_merged_headers_validate_and_swapped_periods_fail(self):
+        self.cfg['feishu_sheets']['data_start_row'] = 3
+        rows = [
+            ['商品ID', '商品标题', '自定义-商品名', '更新时间', '竞品', '负责人', '价格-BRL',
+             '销量', None, '销售额', None, '评分-评价', None, None, None, '点赞', None,
+             '类目排名', '排名变化', None, '卖家名称', '店铺链接', '品牌', '变体数',
+             '类目路径', '商品链接', '商品图片链接', '采集时间'],
+            [None]*7 + ['日', '月', '日', '月', '评分数', '留评率', '星级', '月新增评分数',
+                        '点赞数', '月新增点赞数', None, '近1天', '近7天'] + [None]*8,
+        ]
+        meta = {'merges': [
+            {'start_row_index': 0, 'end_row_index': 0,
+             'start_column_index': left, 'end_column_index': right}
+            for left, right in ((7, 8), (9, 10), (11, 14), (15, 16), (18, 19))]}
+        sink = FeishuSheetsSink(self.cfg, self.client)
+        sink._read = Mock(return_value=rows)
+        sink._check_headers(meta)
+        swapped = deepcopy(rows)
+        swapped[1][7:9] = ['月', '日']
+        sink._read.return_value = swapped
+        with self.assertRaisesRegex(ValueError, '第 8 列表头不匹配'):
+            sink._check_headers(meta)
+
     @patch('competitive_tracking.runner.FeishuMessageSink')
     @patch('competitive_tracking.runner.FeishuSheetsSink')
     @patch('competitive_tracking.runner.FeishuSink')

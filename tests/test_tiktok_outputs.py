@@ -124,6 +124,31 @@ class TikTokOutputTests(unittest.TestCase):
         self.assertEqual(writes[-1]['range'], sheet+'!A4:AG4')
         self.assertEqual(cells[2][0], 'old-product')
 
+    def test_real_merged_headers_validate_and_swapped_creator_metrics_fail(self):
+        self.cfg['feishu_sheets']['data_start_row'] = 3
+        rows = [
+            ['商品ID', '完整标题', '自定义-商品名', '更新日期', '竞品', '负责人',
+             '价格-BRL', None, '佣金比例', '销量', None, None, None, None,
+             '销售额-BRL', None, None, None, None, '星级', '达人', None, None,
+             '关联视频数', '关联直播数', '店铺ID', '店铺名称', '店铺总销量',
+             '店铺分析链接', '商品链接', '当前类目', '采集时间', '是否下架'],
+            [None]*6 + ['当前', '原价', None, '昨日', '近7天', '近14天', '近28天', '总',
+                        '昨日', '近7天', '近14天', '近28天', '总', None,
+                        '出单率', '关联数', '总关联数'] + [None]*10,
+        ]
+        meta = {'merges': [
+            {'start_row_index': 0, 'end_row_index': 0,
+             'start_column_index': left, 'end_column_index': right}
+            for left, right in ((6, 7), (9, 13), (14, 18), (20, 22))]}
+        sink = FeishuSheetsSink(self.cfg, self.client)
+        sink._read = Mock(return_value=rows)
+        sink._check_headers(meta)
+        swapped = deepcopy(rows)
+        swapped[1][21:23] = ['总关联数', '关联数']
+        sink._read.return_value = swapped
+        with self.assertRaisesRegex(ValueError, '第 22 列表头不匹配'):
+            sink._check_headers(meta)
+
     @patch('competitive_tracking.runner.FeishuMessageSink')
     @patch('competitive_tracking.runner.FeishuSheetsSink')
     @patch('competitive_tracking.runner.FeishuSink')

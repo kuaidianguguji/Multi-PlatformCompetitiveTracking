@@ -31,6 +31,22 @@ COLUMNS = [
     ("url", "商品链接"), ("image_url", "商品图片链接"), ("categories", "类目路径"),
 ]
 
+# Explicit labels observed in the platform worksheets' merged headers.
+# Keep these scoped by platform and field so a moved or different metric
+# still fails validation instead of silently receiving another column's data.
+MERGED_HEADER_ALIASES = {
+    "shopee": {
+        "revenue_daily_brl": "销售额日", "revenue_monthly_brl": "销售额月",
+        "review_count": "评分-评价评分数", "review_rate": "评分-评价留评率",
+        "rating": "评分-评价星级", "monthly_new_reviews": "评分-评价月新增评分数",
+        "like_count": "点赞点赞数", "monthly_new_likes": "点赞月新增点赞数",
+        "rank_daily_change": "排名变化近1天", "rank_weekly_change": "排名变化近7天",
+    },
+    "tiktok": {
+        "related_creators": "达人关联数", "total_creators": "达人总关联数",
+    },
+}
+
 
 def supplement_history_metadata(result, source_records, cfg):
     """Old JSON may lack owners/competitor. Fill only missing metadata, without filtering history."""
@@ -159,6 +175,9 @@ class FeishuSheetsSink:
         for col, (key, label) in enumerate(self.columns):
             actual = normalize("".join(str(row[col]) for row in rows if not blank(row[col])))
             allowed = {normalize(label)}
+            alias = MERGED_HEADER_ALIASES.get(self.cfg["platform"], {}).get(key)
+            if alias:
+                allowed.add(normalize(alias))
             # Existing sheets may use a two-level merged header.  Feishu
             # returns the parent label before the child label, e.g. “销量日”
             # while the configured flat label is “日销量”.
