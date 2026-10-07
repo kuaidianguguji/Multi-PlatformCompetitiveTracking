@@ -1,6 +1,6 @@
 # CompetitiveTracking
 
-任务表字段、商品链接取 ID、监控/推送开关和填写示例，见[飞书多维表任务表使用说明](docs/任务表使用说明.md)。
+任务表字段、商品链接取 ID、监控/推送开关和填写示例，见[新手图文使用指南](docs/新手图文使用指南.md)（也有[网页阅读版](docs/新手图文使用指南.html)）。[飞书在线使用文档](https://qcn9sleukmer.feishu.cn/base/Jpd2bH2CtarZ3UsR0OBcBSxjnng?table=ldxHZ0dic4bEVZQI)。
 
 Python + DrissionPage 的模块化商品监控项目。当前实现 **飞书监控表读取 → Mercado/蓝鲸商品采集 → 本地 JSON 与日志 → 飞书结果多维表更新、二维表历史追加、运营消息推送**。
 
@@ -348,6 +348,7 @@ python -m competitive_tracking write-sheets data/run_你的时间戳.json --plat
 - 每个商品末尾按 `查看商品 ｜ 数据链接 ｜ 历史链接` 排列。Mercado 兼容 `[feishu_messages].data_url` / `history_url`；Shopee 使用 `[feishu_messages.platform_links.shopee]` 下的 `data_url` / `history_url`，不会继承 Mercado 链接。同一张卡片内也逐商品选择平台对应链接。填完整 URL，留空则隐藏；可用 `platform_links.mercado` 显式覆盖 Mercado 链接。
 - 新卡片使用当前名称和链接；已发送卡片不自动修改，结果未知的重试仍复用原内容。
 - 只发送有商品数据的 `ok` / `partial` 结果；后者附不完整提示。缺失数值为 `—`，有效的 0 正常显示。历史补发不会冒充刚抓取的数据。
+- 商品采集失败导致无法推送时，终端会打印商品 ID、受影响的接收人和采集错误，消息报告以 `partial` 标记，并在 `unavailable_products` 中记录原因。“发送错误 0”仅说明调用消息接口时没有错误，不代表所有商品都有数据可发送。Mercado 搜索超时还会打印查询前后商品 ID 及是否观察到加载，便于排查返回不同 ID 或页面未更新的情况。
 - 成功状态按“采集 run_id + 接收人 open_id + 平台商品 ID”保存；同一个 JSON 再执行不重复发送，新采集则可以发送新消息。控制台和本地报告保存接收人、发送数量和 message_id；成功表示飞书接口已接收，不表示人员已读。
 - 发送前保存固定 UUID 和卡片内容，超时重试复用它们。对结果未知且超过 45 分钟的批次停止自动重发，需人工核对消息及本地状态；明确返回 99991672 的权限拒绝允许补齐权限后继续。待重试批次的推送条件变化时不发送。
 - 待重试批次需要通过其原始 JSON 恢复；新采集不会自动把之前的旧消息一起补发。保留 `stron_token/feishu_messages_*.json` 去重状态，不要多台机器同时推送同一批次。
@@ -366,6 +367,28 @@ python -m competitive_tracking write-sheets data/run_你的时间戳.json --plat
 
 每次生成 `data/messages_时间戳.json`，预览包含接收人和实际卡片 JSON；真实发送报告另含 message_id、错误及已发送跳过数量。`once` / `serve` 自动结果中新增 `messages` 状态。
 
+## 管理员异常通知
+
+在 `config.toml` 中配置管理员字典，确认填写真实接收人的 open_id 后开启：
+
+```toml
+[admin_notifications]
+# 管理员通知开关，独立于商品运营推送开关。
+enabled = true
+
+[admin_notifications.admins]
+# 每行一名管理员；名称可自定义，值为 ou_ 开头的真实 open_id。
+admin1 = "ou_e2b4c99d8d4ef108e8dbc2d476d6b3fc"
+# 添加更多管理员时填写其真实 ID；相同 open_id 只发送一次。
+# admin2 = "ou_另一名管理员的实际ID"
+```
+
+`once` 和 `serve` 在每次运行结束后汇总异常，向所有管理员发送红色 Markdown 消息卡片。涵盖三个平台的搜索超时、搜索结果为空、登录失败、采集不完整、收藏失败、会话保存异常、飞书读取失败、写表错误/警告、运营消息推送失败，以及程序捕获到的运行错误。卡片包含运行批次、时间、异常阶段、平台/商品 ID 和原因；异常过多时拆成多张卡片。手动执行 `write-feishu`、`write-sheets`、`send-feishu` 时，执行异常也会通知。`--dry-run`、`check-config` 和离线解析不发送管理员消息。
+
+正常完成、没有符合条件任务、正常去重和手动登录提示不发送通知。管理员通知不受任务表监控/推送开关、数据推送人或 `[feishu_messages].enabled` 控制；复用 `[feishu]` 应用凭据、机器人发送权限，管理员须在应用可用范围内。
+
+通知详情保存在 `data/admin_notifications_*.json`，完整错误保存在报告中；卡片对过长错误截取前 600 个字符。发送状态保存在 `stron_token/admin_notifications_*.json`，与运营卡片隔离。同一批次、管理员及同一组异常重复处理不重复发送；网络结果不确定时保留固定 UUID，超过安全重试窗口不自动重发。一名管理员发送失败不影响其他管理员，通知自身失败仅记录日志，不递归发送。配置文件无法读取、程序被强制终止或飞书鉴权/网络不可用时，无法保证通知送达。
+
 ## 模块结构
 
 ```text
@@ -382,6 +405,7 @@ src/competitive_tracking/
   sinks/destinations.py                # 各平台目标配置隔离
   sinks/provision_shopee.py             # 显式创建 Shopee 字段及二维表表头
   sinks/feishu_messages.py             # 当前任务路由、Markdown 卡片、机器人发送与批次去重
+  sinks/admin_notifications.py         # 管理员字典、运行异常汇总、独立通知状态与重试
   browser.py                          # 专用浏览器、profile、sessionStorage
   platforms/registry.py               # 平台注册表
   platforms/mercado/collector.py       # 登录、收藏、虚拟滚动、搜索、加入分组

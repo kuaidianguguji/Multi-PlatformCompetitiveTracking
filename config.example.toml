@@ -546,3 +546,14 @@ grow_rows = 500
 data_url = "https://qcn9sleukmer.feishu.cn/base/RciEbRT9MaWeA3sMesqcuGswnQ4?table=tblqXfY36xQ2iNP8&view=vewcfc4tJB"
 # TikTok 消息卡片“历史链接”，指向本平台历史二维表；留空隐藏。
 history_url = "https://qcn9sleukmer.feishu.cn/sheets/OTfUsgawthKeVLt2Be2crr6EnDf?sheet=ae1e40"
+
+[admin_notifications]
+# 管理员异常通知总开关，独立于运营消息推送开关；开启后 once/serve 在每次运行结束时汇总异常。
+# 正常运行、无符合条件任务、正常去重和手动登录提示不发送；采集失败/结果为空、收藏失败、写表失败、推送失败等会发送。
+enabled = false
+
+[admin_notifications.admins]
+# 管理员字典：左侧是便于识别的名称，右侧为真实 Feishu open_id（必须以 ou_ 开头）。
+# 可添加 admin1、admin2 等多个键；同一个 open_id 重复配置只通知一次。开启通知至少填写一人。
+# 管理员需在机器人的应用可用范围内，复用 [feishu] 凭据及 im:message:send_as_bot 权限。
+# admin1 = "ou_e2b4c99d8d4ef108e8dbc2d476d6b3fc"

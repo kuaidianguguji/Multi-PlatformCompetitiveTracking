@@ -12,6 +12,7 @@ from competitive_tracking.sources.feishu import FeishuSource, select_targets
 from competitive_tracking.sinks.feishu import FeishuSink
 from competitive_tracking.sinks.feishu_sheets import FeishuSheetsSink
 from competitive_tracking.sinks.feishu_messages import FeishuMessageSink
+from competitive_tracking.sinks.admin_notifications import RunProblems, notify_admins
 from competitive_tracking.sinks.destinations import destination_config
 from competitive_tracking.storage import JsonSink, atomic_json
 
@@ -28,12 +29,37 @@ def setup_logging(cfg):
 
 
 def run_once(cfg, source=None, registry=None, sink=None) -> dict:
-    registry = COLLECTORS if registry is None else registry
-    source = source or FeishuSource(cfg["feishu"])
     sink = sink or JsonSink(cfg["app"]["output_dir"])
     now = datetime.now(ZoneInfo(cfg["schedule"]["timezone"]))
     result = {"schema_version": 1, "run_id": now.strftime("%Y%m%d_%H%M%S_%f"),
               "started_at": now.isoformat(), "status": "ok", "platforms": {}, "products": {}}
+    problems, reports = RunProblems(), {}
+    logger = logging.getLogger()
+    logger.addHandler(problems)
+    try:
+        _run_once(cfg, result, reports, source=source, registry=registry, sink=sink)
+    except Exception as exc:
+        result["status"] = "error"
+        result["error"] = f"{type(exc).__name__}: {exc}"
+        log.error("运行异常：%s", result["error"])
+    finally:
+        logger.removeHandler(problems)
+    notification = notify_admins(cfg, result, reports=reports, logs=problems.problems)
+    if notification and notification["status"] != "skipped":
+        result["admin_notifications"] = {k: notification[k] for k in ("status", "report_path", "error") if k in notification}
+        if notification["status"] in ("error", "partial") and result["status"] == "ok":
+            result["status"] = "partial"
+        try:
+            sink.write(result)
+        except Exception as exc:
+            log.error("保存管理员通知结果失败：%s", exc)
+    log.info("运行完成 status=%s，输出 %s", result["status"], cfg["app"]["output_dir"] / "latest.json")
+    return result
+
+
+def _run_once(cfg, result, reports, *, source=None, registry=None, sink=None):
+    registry = COLLECTORS if registry is None else registry
+    source = source or FeishuSource(cfg["feishu"])
     try:
         records = source.read_records()
         for platform in cfg["app"]["platforms"]:
@@ -93,17 +119,17 @@ def run_once(cfg, source=None, registry=None, sink=None) -> dict:
             continue
         try:
             report = factory(selected).write(result)
+            reports[report_key] = report
             result[report_key] = {"status": report["status"], "report_path": report["report_path"]}
             if report["status"] != "ok":
                 result["status"] = "partial"
         except Exception as exc:
             result[report_key] = {"status": "error", "error": f"{type(exc).__name__}: {exc}"}
+            reports[report_key] = result[report_key]
             result["status"] = "partial"
             log.error("%s 写入失败：%s", report_key, result[report_key]["error"])
         result["finished_at"] = datetime.now(ZoneInfo(cfg["schedule"]["timezone"])).isoformat()
         sink.write(result)
-    log.info("运行完成 status=%s，输出 %s", result["status"], cfg["app"]["output_dir"] / "latest.json")
-    return result
 
 
 def next_run(now: datetime, daily_time: str) -> datetime:

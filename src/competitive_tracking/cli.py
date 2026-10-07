@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 
@@ -13,8 +14,20 @@ from competitive_tracking.sources.feishu import FeishuSource
 from competitive_tracking.sinks.feishu import FeishuSink, enrich_from_source
 from competitive_tracking.sinks.feishu_sheets import FeishuSheetsSink, supplement_history_metadata
 from competitive_tracking.sinks.feishu_messages import FeishuMessageSink
+from competitive_tracking.sinks.admin_notifications import notify_admins
 from competitive_tracking.storage import atomic_json, single_instance
 from competitive_tracking.sinks.destinations import destination_config
+
+
+def notify_command_problem(cfg, command, *, report=None, error=None, dry_run=False):
+    if dry_run or command in ('check-config', 'parse-html'):
+        return
+    now = datetime.now(timezone.utc)
+    result = {"run_id": command + '_' + now.strftime('%Y%m%d_%H%M%S_%f'), "started_at": now.isoformat(),
+              "status": "error" if error else (report or {}).get("status", "ok"), "products": {}, "platforms": {}}
+    if error:
+        result['error'] = error
+    notify_admins(cfg, result, reports={command: report} if report else {})
 
 
 def main(argv=None):
@@ -47,6 +60,7 @@ def main(argv=None):
     offline.add_argument("--product-id", action="append", help="仅输出给定商品ID，可重复")
     offline.add_argument("--platform", choices=["mercado", "shopee", "tiktok"], default="mercado", help="导出页面所属平台")
     args = parser.parse_args(argv)
+    cfg = None
     try:
         if args.command == "parse-html":
             parser_fn = {'shopee': parse_shopee_html, 'tiktok': parse_tiktok_html, 'mercado': parse_html}[args.platform]
@@ -81,6 +95,7 @@ def main(argv=None):
                 if result.get("schema_version") != 1 or not isinstance(result.get("products"), dict):
                     raise ValueError("输入文件不是 schema_version=1 的采集结果")
                 report = FeishuMessageSink(cfg).write(result, dry_run=args.dry_run)
+                notify_command_problem(cfg, args.command, report=report, dry_run=args.dry_run)
                 print(json.dumps({"status": report["status"], "sent_cards": len(report["sent"]), "skipped_count": report["skipped_count"],
                                   "errors": report["errors"], "report_path": report["report_path"]}, ensure_ascii=False))
                 return 0 if report["status"] in ("ok", "preview") else 1
@@ -95,6 +110,7 @@ def main(argv=None):
                 if needs_metadata:
                     result = supplement_history_metadata(result, FeishuSource(cfg["feishu"]).read_records(), cfg)
                 report = FeishuSheetsSink(cfg).write(result, dry_run=args.dry_run)
+                notify_command_problem(cfg, args.command, report=report, dry_run=args.dry_run)
                 print(json.dumps({k: report.get(k) for k in ("status", "planned_count", "appended_count", "recovered_count", "already_recorded_count", "report_path")}, ensure_ascii=False))
                 return 0 if report["status"] in ("ok", "preview") else 1
             elif args.command == "write-feishu":
@@ -105,6 +121,7 @@ def main(argv=None):
                     raise ValueError("输入文件不是 schema_version=1 的采集结果")
                 result = enrich_from_source(result, FeishuSource(cfg["feishu"]).read_records(), cfg)
                 report = FeishuSink(cfg).write(result, dry_run=args.dry_run)
+                notify_command_problem(cfg, args.command, report=report, dry_run=args.dry_run)
                 print(json.dumps({"status": report["status"], "report_path": report["report_path"],
                                   "counts": {k: len(report["plan"][k]) for k in ("created", "updated", "unchanged", "skipped", "errors")}}, ensure_ascii=False))
                 return 0 if report["status"] in ("ok", "preview") and not report["plan"]["errors"] else 1
@@ -117,6 +134,8 @@ def main(argv=None):
         return 130
     except Exception as exc:
         print(f"运行失败：{type(exc).__name__}: {exc}")
+        if cfg is not None:
+            notify_command_problem(cfg, args.command, error=f"{type(exc).__name__}: {exc}", dry_run=getattr(args, 'dry_run', False))
         return 1
     return 0
 

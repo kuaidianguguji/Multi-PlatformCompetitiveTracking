@@ -50,6 +50,18 @@ def load_config(path: str | Path) -> dict:
             if not isinstance(target.get('validate_headers'), bool):
                 raise ValueError(f'{section}.validate_headers 必须为布尔值')
     cfg.setdefault("feishu_messages", {"enabled": False, "products_per_message": 4})
+    notifications = cfg.setdefault("admin_notifications", {})
+    notifications.setdefault("enabled", False)
+    notifications.setdefault("admins", {})
+    if not isinstance(notifications["enabled"], bool):
+        raise ValueError("admin_notifications.enabled 必须为布尔值")
+    if not isinstance(notifications["admins"], dict):
+        raise ValueError("admin_notifications.admins 必须为 名称:open_id 字典")
+    for name, open_id in notifications["admins"].items():
+        if not isinstance(name, str) or not name.strip() or not isinstance(open_id, str) or not re.fullmatch(r"ou_[A-Za-z0-9_-]+", open_id):
+            raise ValueError("管理员名称不能为空，open_id 必须以 ou_ 开头且仅包含字母、数字、下划线或连字符")
+    if notifications["enabled"] and not notifications["admins"]:
+        raise ValueError("开启管理员通知时请至少配置一名 admin_notifications.admins 管理员")
     messages = cfg["feishu_messages"]
     messages.setdefault("platforms", ["mercado"])
     messages.setdefault("products_per_message", 4)

@@ -163,6 +163,7 @@ class CollectorTests(unittest.TestCase):
         cfg["browser"]["element_timeout_seconds"] = 0.01
         collector = MercadoCollector(cfg)
         collector.page = Mock()
+        collector.page.html = ""
         return collector
 
     def test_no_targets_never_starts_browser(self):
@@ -212,6 +213,42 @@ class CollectorTests(unittest.TestCase):
         collector._navigate.assert_called_once_with("https://xp.lingdongsz.com/#/allItems")
         self.assertEqual(collector._element.call_args_list[0].args[0], collector.selectors["search_input"])
         self.assertEqual(collector._element.call_args_list[1].args[0], collector.selectors["search_button"])
+
+    def test_search_alias_same_rows_after_loading_cycle(self):
+        collector = self.make()
+        # Allow parser work and thread scheduling; the shared 10 ms timeout is
+        # intended for the negative timeout test, not a successful load cycle.
+        collector.timeout = 1
+        collector._navigate = Mock()
+        collector._element = Mock()
+        html = (ROOT / "tests/fixtures/table.html").read_text(encoding="utf-8")
+        collector._snapshot = Mock(return_value=html)
+        collector._busy = Mock(side_effect=[False, True, False])
+        collector._scan_page = Mock(return_value=parse_html(html))
+        self.assertEqual(collector._search("MLBU4813895273")["product_id"], "MLB123")
+
+    def test_search_unchanged_alias_without_completion_still_times_out(self):
+        collector = self.make()
+        collector._navigate = Mock()
+        collector._element = Mock()
+        collector._snapshot = Mock(return_value=(ROOT / "tests/fixtures/table.html").read_text(encoding="utf-8"))
+        collector._busy = Mock(return_value=False)
+        collector._scan_page = Mock()
+        with self.assertRaisesRegex(TimeoutError, "结果未完成更新"):
+            collector._search("MLBU4813895273")
+        collector._scan_page.assert_not_called()
+
+    def test_search_zero_count_outside_table_snapshot_is_completed(self):
+        collector = self.make()
+        collector._navigate = Mock()
+        collector._element = Mock()
+        collector._snapshot = Mock(return_value="")
+        collector._busy = Mock(return_value=False)
+        collector._scan_page = Mock(return_value={})
+        def queried():
+            collector.page.html = '<span class="el-pagination__total">共计\n0 条</span>'
+        collector._element.return_value.click.side_effect = queried
+        self.assertIsNone(collector._search("MLBU4813895273"))
 
     def test_all_items_selectors_distinguish_product_id_from_other_inputs(self):
         from lxml import html

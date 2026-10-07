@@ -235,18 +235,33 @@ class MercadoCollector:
         if not self.page.get('about:blank', show_errmsg=True):
             raise RuntimeError('搜索页重置失败')
         self._navigate(self.cfg["search_url"])
+        self._wait(lambda: not self._busy(), "搜索页初始加载未完成")
         field = self._element(self.selectors["search_input"])
         field.input(pid, clear=True)
         previous = self._snapshot()
+        def empty_result():
+            total = BeautifulSoup(self.page.html, "lxml").select_one(".el-pagination__total")
+            return bool(total and re.search(r"(?:共计|共)\s*0\s*条", total.get_text()))
+        previously_empty = empty_result()
+        saw_loading = False
         self._element(self.selectors["search_button"]).click()
         def changed():
+            nonlocal saw_loading
             if self._busy():
+                saw_loading = True
                 return False
             snapshot = self._snapshot()
             rows = parse_html(snapshot)
-            return pid in rows or snapshot != previous and bool(rows) or (
-                snapshot != previous and "共计 0 条" in self.page.html)
-        self._wait(changed, f"搜索 {pid} 结果未完成更新")
+            # An alias can return the same row as the initial table. An observed
+            # loading cycle also proves completion; unchanged rows alone do not.
+            return bool(rows) and (pid in rows or snapshot != previous or saw_loading) or (
+                empty_result() and (saw_loading or snapshot != previous or not previously_empty))
+        try:
+            self._wait(changed, f"搜索 {pid} 结果未完成更新")
+        except TimeoutError:
+            log.warning("搜索超时诊断：商品ID=%s，观察到查询加载=%s，查询前商品ID=%s，当前商品ID=%s，URL=%s",
+                        pid, saw_loading, list(parse_html(previous)), list(parse_html(self._snapshot())), self.page.url)
+            raise
         time.sleep(self.cfg["result_settle_seconds"])
         # allItems may return a different 商品ID than the requested one.  The
         # site search result itself is authoritative for this workflow, so use

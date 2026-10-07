@@ -93,6 +93,35 @@ class MessageTests(unittest.TestCase):
         self.assertEqual(len(report['sent']), 2)
         self.assertEqual({c.kwargs['json']['receive_id'] for c in self.client.request.call_args_list}, {'ou_recipient', 'ou_second'})
 
+    def test_failed_shared_product_reports_both_people_and_recovery_sends_both(self):
+        self.rows[0]['fields']['数据推送人'] = [{'id': 'ou_bear', 'name': '熊苏帆'}]
+        duplicate = deepcopy(self.rows[0])
+        duplicate['record_id'] = 'r2'
+        duplicate['fields']['数据推送人'] = [{'id': 'ou_zhang', 'name': '张任善宇'}]
+        self.rows.append(duplicate)
+        entry = self.result['products']['mercado:MLB123']
+        entry.update(status='error', error='搜索结果未完成更新')
+        with self.assertLogs('competitive_tracking.sinks.feishu_messages', level='WARNING') as logs:
+            report = self.sink.write(self.result)
+        self.assertEqual(report['status'], 'partial')
+        self.assertEqual(report['errors'], [])
+        self.assertEqual(len(report['unavailable_products']), 1)
+        self.assertEqual({p['name'] for p in report['unavailable_products'][0]['recipients']}, {'熊苏帆', '张任善宇'})
+        self.assertIn('搜索结果未完成更新', '\n'.join(logs.output))
+        self.client.request.assert_not_called()
+        entry['status'] = 'ok'
+        recovered = self.sink.write(self.result)
+        self.assertEqual(recovered['status'], 'ok')
+        self.assertEqual({call.kwargs['json']['receive_id'] for call in self.client.request.call_args_list}, {'ou_bear', 'ou_zhang'})
+
+    def test_failed_product_with_push_disabled_does_not_report_missing_message(self):
+        self.result['products']['mercado:MLB123']['status'] = 'error'
+        self.rows[0]['fields']['推送开关'] = '关闭'
+        report = self.sink.write(self.result)
+        self.assertEqual(report['status'], 'ok')
+        self.assertEqual(report['unavailable_products'], [])
+        self.client.request.assert_not_called()
+
     def test_same_run_skip_new_run_send(self):
         self.sink.write(self.result)
         self.assertEqual(self.sink.write(self.result)['skipped_count'], 1)

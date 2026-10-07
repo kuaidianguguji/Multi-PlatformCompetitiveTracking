@@ -149,7 +149,28 @@ class FeishuMessageSink:
             targets = select_targets(records, self.config["feishu"]["fields"], platform)
             for target in targets:
                 entry = result["products"].get(target.key)
-                if not entry or entry.get("status") not in ("ok", "partial") or not entry.get("product"):
+                # A target added/changed after this run was collected belongs
+                # to a later run, not this run's failed delivery diagnostics.
+                if not entry:
+                    continue
+                if entry.get("status") not in ("ok", "partial") or not entry.get("product"):
+                    recipients = {}
+                    for record in target.records:
+                        if record["push_enabled"] is not True:
+                            continue
+                        people = record["recipients"]
+                        for person in people if isinstance(people, list) else [people]:
+                            pid = person.get("open_id") or person.get("id") or person.get("name")
+                            recipients[pid] = person.get("name") or pid
+                    if recipients:
+                        reason = entry.get("error") or "本次没有可推送的采集数据"
+                        report.setdefault("unavailable_products", []).append({
+                            "key": target.key, "status": entry.get("status", "missing"),
+                            "recipients": [{"id": pid, "name": name} for pid, name in recipients.items()],
+                            "reason": reason,
+                        })
+                        log.warning("飞书消息未推送：%s；接收人=%s；原因=%s", target.key,
+                                    "、".join(str(name) for name in recipients.values()), reason)
                     continue
                 p = entry["product"]
                 if p.get("product_id") != target.product_id or p.get("platform") != platform or entry.get("product_id") != target.product_id:
@@ -210,7 +231,8 @@ class FeishuMessageSink:
         now = self.clock()
         path = self.config["app"]["output_dir"] / f"messages_{now.strftime('%Y%m%d_%H%M%S_%f')}.json"
         report = {"status": "preview" if dry_run else "running", "run_id": result["run_id"],
-                  "sent": [], "skipped_count": 0, "planned": [], "errors": [], "report_path": str(path)}
+                  "sent": [], "skipped_count": 0, "planned": [], "errors": [],
+                  "unavailable_products": [], "report_path": str(path)}
         state = json.loads(self.state_path.read_text(encoding="utf-8")) if self.state_path.exists() else {"completed": {}, "pending": []}
         try:
             routes = self._routes(result, report)
@@ -252,10 +274,12 @@ class FeishuMessageSink:
                             self._send(batch, state, report)
                         except Exception as exc:
                             report["errors"].append({"uuid": body["uuid"], "error": str(exc)})
-            report["status"] = "partial" if report["errors"] else ("preview" if dry_run else "ok")
+            report["status"] = "partial" if report["errors"] or report["unavailable_products"] else ("preview" if dry_run else "ok")
         except Exception as exc:
             report["status"] = "error"
             report["errors"].append({"error": f"{type(exc).__name__}: {exc}"})
         atomic_json(path, report)
-        log.info("飞书消息 %s：成功 %d 张卡片，跳过已发 %d 项，错误 %d；报告 %s", report["status"], len(report["sent"]), report["skipped_count"], len(report["errors"]), path)
+        log.info("飞书消息 %s：成功 %d 张卡片，跳过已发 %d 项，无采集数据未推送 %d 个商品，发送错误 %d；报告 %s",
+                 report["status"], len(report["sent"]), report["skipped_count"],
+                 len(report["unavailable_products"]), len(report["errors"]), path)
         return report
