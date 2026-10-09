@@ -324,7 +324,8 @@ class FeishuSink:
                     if any(not same_value(fields.get(k), v, reverse[k]) for k, v in item["fields"].items()):
                         raise RuntimeError(f"写后核对失败：{pid} 字段值与请求不一致")
                 report["verified_count"] += len(plan["created"]) + len(plan["updated"])
-            report["status"] = "partial" if plan["errors"] or plan["warnings"] else "ok"
+            unavailable = any(item["reason"] == "商品无可写入的采集结果" for item in plan["skipped"])
+            report["status"] = "partial" if plan["errors"] or plan["warnings"] or unavailable else "ok"
         except Exception as exc:
             report["status"] = "error"
             report["error"] = f"{type(exc).__name__}: {exc}"

@@ -79,6 +79,12 @@ METRIC_RENDERERS = {'mercado': mercado_metrics, 'shopee': shopee_metrics, 'tikto
 
 
 def product_markdown(entry, zone, settings=None):
+    if entry.get("message_notice"):
+        heading = f"{markdown_text(entry['platform'])} · {markdown_text(entry['product_id'])}"
+        if entry.get("message_custom_names"):
+            heading += " - " + " / ".join(markdown_text(n) for n in entry["message_custom_names"])
+        text = "商品搜索结果为空" if entry.get("status") == "not_found" else "商品采集失败，本次未获取到数据"
+        return f"**{heading}**\n**查询结果：** {text}\n**原因：** {markdown_text(entry.get('error') or '未获得有效商品数据')}"
     settings = settings or {}
     platform = entry['platform']
     if platform not in METRIC_RENDERERS:
@@ -169,11 +175,13 @@ class FeishuMessageSink:
                             "recipients": [{"id": pid, "name": name} for pid, name in recipients.items()],
                             "reason": reason,
                         })
-                        log.warning("飞书消息未推送：%s；接收人=%s；原因=%s", target.key,
+                        log.warning("商品数据不可用，将发送查询状态通知：%s；接收人=%s；原因=%s", target.key,
                                     "、".join(str(name) for name in recipients.values()), reason)
-                    continue
-                p = entry["product"]
-                if p.get("product_id") != target.product_id or p.get("platform") != platform or entry.get("product_id") != target.product_id:
+                    if entry.get("status") not in ("error", "not_found", "partial"):
+                        continue
+                    entry = {**entry, "message_notice": True}
+                p = entry.get("product") or {}
+                if not entry.get("message_notice") and (p.get("product_id") != target.product_id or p.get("platform") != platform or entry.get("product_id") != target.product_id):
                     raise ValueError(f"消息商品标识不一致：{target.key}")
                 for record in target.records:
                     if record["push_enabled"] is not True:
@@ -184,7 +192,12 @@ class FeishuMessageSink:
                         if not isinstance(pid, str) or not re.fullmatch(r"ou_[A-Za-z0-9_-]+", pid):
                             report["errors"].append({"key": target.key, "error": "数据推送人缺少有效 open_id，不能按姓名猜测接收者"})
                             continue
-                        identity = json.dumps([result["run_id"], pid, target.key], ensure_ascii=False)
+                        identity_parts = [result["run_id"], pid, target.key]
+                        if entry.get("message_notice"):
+                            # A later recovery can send fresh product data even
+                            # when this run's failure notice was already delivered.
+                            identity_parts.append("query_status")
+                        identity = json.dumps(identity_parts, ensure_ascii=False)
                         # Custom names belong to this recipient's enabled task records. Do not
                         # leak another recipient's label or overwrite the platform product title.
                         item = routes.setdefault(identity, {"recipient": pid, "name": person.get("name") or pid,
@@ -208,7 +221,7 @@ class FeishuMessageSink:
         try:
             response = self.client.request("POST", "/im/v1/messages", params={"receive_id_type": "open_id"}, json=batch["body"])
         except FeishuAPIError as exc:
-            if exc.code == 99991672:
+            if exc.code in (99991672, 99992361, 99992351, 230013):
                 # Definitive permission rejection: no message was accepted. It is safe to retry
                 # after permissions are granted even beyond the uncertain-response window.
                 batch["first_attempt_at"] = None
@@ -222,7 +235,11 @@ class FeishuMessageSink:
             state["completed"][identity] = {"message_id": message_id, "sent_at": now.isoformat()}
         state["pending"].remove(batch)
         atomic_json(self.state_path, state)
-        report["sent"].append({"recipient_name": batch["recipient_name"], "message_id": message_id, "product_count": len(batch["identities"])})
+        report["sent"].append({"recipient_name": batch["recipient_name"], "recipient_id": batch["body"]["receive_id"],
+                               "message_id": message_id, "product_count": len(batch["identities"]),
+                               "notice_count": batch.get("notice_count", 0),
+                               "data_product_count": len(batch["identities"]) - batch.get("notice_count", 0),
+                               "identities": batch["identities"], "product_keys": batch.get("product_keys", [])})
         log.info("飞书消息发送成功：%s，%d 个商品，message_id=%s", batch["recipient_name"], len(batch["identities"]), message_id)
 
     def write(self, result, *, dry_run=False):
@@ -232,7 +249,7 @@ class FeishuMessageSink:
         path = self.config["app"]["output_dir"] / f"messages_{now.strftime('%Y%m%d_%H%M%S_%f')}.json"
         report = {"status": "preview" if dry_run else "running", "run_id": result["run_id"],
                   "sent": [], "skipped_count": 0, "planned": [], "errors": [],
-                  "unavailable_products": [], "report_path": str(path)}
+                  "unavailable_products": [], "completed_identities": [], "report_path": str(path)}
         state = json.loads(self.state_path.read_text(encoding="utf-8")) if self.state_path.exists() else {"completed": {}, "pending": []}
         try:
             routes = self._routes(result, report)
@@ -255,6 +272,7 @@ class FeishuMessageSink:
                     continue
                 if identity in state["completed"]:
                     report["skipped_count"] += 1
+                    report["completed_identities"].append(identity)
                     continue
                 grouped.setdefault(item["recipient"], []).append((identity, item))
             for recipient, items in grouped.items():
@@ -265,7 +283,9 @@ class FeishuMessageSink:
                     body = {"receive_id": recipient, "msg_type": "interactive", "content": json.dumps(card, ensure_ascii=False), "uuid": str(uuid.uuid4())}
                     if len(json.dumps(body, ensure_ascii=False).encode("utf-8")) > 28000:
                         raise ValueError("消息卡片超过大小限制，请调小 products_per_message")
-                    batch = {"run_id": result["run_id"], "identities": [i for i, _ in chunk], "recipient_name": chunk[0][1]["name"], "body": body}
+                    batch = {"run_id": result["run_id"], "identities": [i for i, _ in chunk], "recipient_name": chunk[0][1]["name"], "body": body,
+                             "notice_count": sum(bool(item["entry"].get("message_notice")) for _, item in chunk),
+                             "product_keys": [item["key"] for _, item in chunk]}
                     report["planned"].append(batch)
                     if not dry_run:
                         state["pending"].append(batch)
@@ -279,7 +299,8 @@ class FeishuMessageSink:
             report["status"] = "error"
             report["errors"].append({"error": f"{type(exc).__name__}: {exc}"})
         atomic_json(path, report)
-        log.info("飞书消息 %s：成功 %d 张卡片，跳过已发 %d 项，无采集数据未推送 %d 个商品，发送错误 %d；报告 %s",
-                 report["status"], len(report["sent"]), report["skipped_count"],
+        log.info("飞书消息 %s：成功 %d 张卡片（数据 %d 项，状态通知 %d 项），跳过已发 %d 项，无采集数据 %d 个商品，发送错误 %d；报告 %s",
+                 report["status"], len(report["sent"]),
+                 sum(s["data_product_count"] for s in report["sent"]), sum(s["notice_count"] for s in report["sent"]), report["skipped_count"],
                  len(report["unavailable_products"]), len(report["errors"]), path)
         return report

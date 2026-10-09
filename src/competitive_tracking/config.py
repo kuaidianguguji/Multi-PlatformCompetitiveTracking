@@ -19,6 +19,9 @@ def load_config(path: str | Path) -> dict:
     # 兼容尚未添加此配置项的旧 config.toml。
     cfg["mercado"].setdefault("login_settle_seconds", 5)
     cfg["mercado"].setdefault("upgrade_wait_seconds", 30)
+    cfg["mercado"].setdefault("favorite_load_retries", 1)
+    if type(cfg["mercado"]["favorite_load_retries"]) is not int or not 0 <= cfg["mercado"]["favorite_load_retries"] <= 3:
+        raise ValueError("mercado.favorite_load_retries 必须为 0..3 的整数")
     cfg.setdefault("feishu_output", {"enabled": False})
     cfg.setdefault("feishu_sheets", {"enabled": False})
     for section in ('shopee_feishu_output', 'shopee_feishu_sheets', 'tiktok_feishu_output', 'tiktok_feishu_sheets'):
@@ -53,8 +56,11 @@ def load_config(path: str | Path) -> dict:
     notifications = cfg.setdefault("admin_notifications", {})
     notifications.setdefault("enabled", False)
     notifications.setdefault("admins", {})
+    notifications.setdefault("send_daily_summary", True)
     if not isinstance(notifications["enabled"], bool):
         raise ValueError("admin_notifications.enabled 必须为布尔值")
+    if not isinstance(notifications["send_daily_summary"], bool):
+        raise ValueError("admin_notifications.send_daily_summary 必须为布尔值")
     if not isinstance(notifications["admins"], dict):
         raise ValueError("admin_notifications.admins 必须为 名称:open_id 字典")
     for name, open_id in notifications["admins"].items():

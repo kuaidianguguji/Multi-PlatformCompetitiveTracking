@@ -9,6 +9,14 @@ import requests
 BASE = "https://open.feishu.cn/open-apis"
 
 
+def error_hint(code):
+    return {
+        99992361: "；接收人 open_id 不属于当前飞书应用，请在当前 app_id 下重新获取该用户的 open_id（不同应用的 open_id 不能混用）",
+        99992351: "；接收人 open_id 无效或不存在，请在当前飞书应用下核对用户 ID",
+        230013: "；机器人对该用户没有可用性，请在应用版本管理的可用范围添加该用户并发布",
+    }.get(code, "")
+
+
 class FeishuAPIError(RuntimeError):
     def __init__(self, message, *, code=None):
         super().__init__(message)
@@ -44,8 +52,7 @@ class FeishuClient:
                         detail = f" code={code}" if code is not None else ""
                         if scopes:
                             detail += "，所需权限：" + ", ".join(scopes)
-                        if code == 230013:
-                            detail += "；机器人对该用户没有可用性，请在应用版本管理的可用范围添加该用户并发布"
+                        detail += error_hint(code)
                         raise FeishuAPIError(f"飞书 HTTP {response.status_code}{detail}，请检查应用权限和表配置", code=code)
                     try:
                         return response.json()
@@ -77,7 +84,7 @@ class FeishuClient:
                 self.token = ""
                 continue
             if result.get("code") != 0:
-                raise FeishuAPIError(f"飞书 API 失败 code={result.get('code')}，接口 {path.rsplit('/', 1)[-1]}；请检查字段类型与应用权限", code=result.get('code'))
+                raise FeishuAPIError(f"飞书 API 失败 code={result.get('code')}，接口 {path.rsplit('/', 1)[-1]}；请检查字段类型与应用权限" + error_hint(result.get('code')), code=result.get('code'))
             return result.get("data", {})
         raise AssertionError("unreachable")
 

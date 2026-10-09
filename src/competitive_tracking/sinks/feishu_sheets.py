@@ -333,7 +333,7 @@ class FeishuSheetsSink:
                     self._complete_batch(batch, state)
                     report["appended_count"] += len(group)
                 next_row = end + 1
-            report["status"] = "preview" if dry_run else ("partial" if report["warnings"] else "ok")
+            report["status"] = "preview" if dry_run else ("partial" if report["warnings"] or report["skipped"] else "ok")
         except Exception as exc:
             report["status"] = "error"
             report["error"] = f"{type(exc).__name__}: {exc}"

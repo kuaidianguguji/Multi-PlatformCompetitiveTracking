@@ -126,6 +126,41 @@ class MercadoCollector:
     def _snapshot(self):
         return self.page.run_js(SNAPSHOT_JS)
 
+    def _page_diagnostics(self):
+        """Record structure and visibility only, never page text or input data."""
+        diagnostics = {}
+        try:
+            url = urlsplit(str(self.page.url))
+            # Queries can contain account/session data; keep only the SPA route.
+            route = url.fragment.split("?")[0]
+            diagnostics["url"] = f"{url.scheme}://{url.hostname or ''}{url.path}" + ("#" + route if route else "")
+        except Exception:
+            diagnostics["url_unavailable"] = True
+        try:
+            counts = self.page.run_js("""
+              const visible = e => getComputedStyle(e).display !== 'none'
+                && getComputedStyle(e).visibility !== 'hidden'
+                && e.getBoundingClientRect().height > 0;
+              const count = (selector, visibleOnly = false) =>
+                [...document.querySelectorAll(selector)].filter(e => !visibleOnly || visible(e)).length;
+              return {tables: count('.vxe-table'), rows: count('tr.vxe-body--row'),
+                pagers: count('.el-pagination,.vxe-pager'),
+                loading_masks: count('.el-loading-mask,.vxe-loading', true),
+                upgrade_dialogs: count('.upgrade-dialog', true),
+                dialog_overlays: count('.el-dialog__wrapper,.el-message-box__wrapper,.v-modal', true)};
+            """)
+            if not isinstance(counts, dict):
+                raise ValueError("DOM counts unavailable")
+            for key in ("tables", "rows", "pagers", "loading_masks", "upgrade_dialogs", "dialog_overlays"):
+                value = counts.get(key)
+                if isinstance(value, int) and not isinstance(value, bool):
+                    diagnostics[key] = value
+            if "loading_masks" in diagnostics:
+                diagnostics["busy"] = diagnostics["loading_masks"] > 0
+        except Exception:
+            diagnostics["dom_unavailable"] = True
+        return diagnostics
+
     def _ready(self):
         def ready():
             if self._busy():
@@ -137,7 +172,12 @@ class MercadoCollector:
                 return True
             total = soup.select_one(".el-pagination__total")
             return bool(total and re.search(r"(?:共计|共)\s*0\s*条", total.get_text()))
-        self._wait(ready, "表格结果加载超时或页面结构变化")
+        try:
+            self._wait(ready, "表格结果加载超时或页面结构变化")
+        except TimeoutError as exc:
+            diagnostic = json.dumps(self._page_diagnostics(), ensure_ascii=False)
+            log.warning("表格加载超时诊断：%s", diagnostic)
+            raise TimeoutError(f"{exc}；页面诊断：{diagnostic}") from exc
         time.sleep(self.cfg["result_settle_seconds"])
 
     def _scroll(self, x, y):
@@ -194,7 +234,9 @@ class MercadoCollector:
         return products
 
     def _favorites(self, wanted: set[str]) -> dict[str, dict]:
-        found, seen_pages, scanned_ids = {}, set(), set()
+        # Retain completed pages if a later page fails, so only missing targets
+        # need the slower independent search path.
+        found, seen_pages, scanned_ids = getattr(self, "_favorite_products", {}), set(), set()
         self._ready()
         # A remembered SPA page may not be the first page.
         initial = pagination(self.page.html)
@@ -326,7 +368,23 @@ class MercadoCollector:
         with self.session_factory(self.config, "mercado", origin_url=self.cfg["favorite_url"],
                                   init_scripts=[Path(__file__).with_name("canvas.js").read_text(encoding="utf-8")]) as self.page:
             self._login()
-            favorites = self._favorites({t.product_id for t in valid})
+            favorites, favorite_warnings = {}, []
+            self._favorite_products = favorites
+            attempts = self.cfg.get("favorite_load_retries", 1) + 1
+            for attempt in range(attempts):
+                try:
+                    if attempt:
+                        self.page.refresh()
+                        if not self.page.wait.doc_loaded(timeout=self.config["browser"]["page_load_timeout_seconds"]):
+                            raise TimeoutError("刷新收藏页文档加载超时")
+                        time.sleep(self.cfg["page_wait_seconds"])
+                        self._dismiss_upgrade_dialog()
+                    favorites.update(self._favorites({t.product_id for t in valid}))
+                    break
+                except Exception as exc:
+                    warning = f"收藏列表扫描异常（第 {attempt + 1}/{attempts} 次）：{type(exc).__name__}: {exc}"
+                    favorite_warnings.append(warning)
+                    log.warning("%s；保留已获取的 %d 个商品，未命中商品将独立搜索", warning, len(favorites))
             for target in valid:
                 pid = target.product_id
                 try:
@@ -335,9 +393,10 @@ class MercadoCollector:
                     if product is None:
                         product = self._search(pid)
                     if product is None:
-                        results[target.key] = {"status": "not_found", "error": "搜索结果为空"}
+                        results[target.key] = {"status": "not_found", "error": "搜索结果为空", "warnings": list(favorite_warnings)}
                         log.warning("未找到 %s", target.key)
                         continue
+                    product = dict(product, warnings=[*product.get("warnings", []), *favorite_warnings])
                     favorite_status = "existing"
                     if origin == "search":
                         try:
@@ -358,6 +417,6 @@ class MercadoCollector:
                     results[target.key] = {"status": "partial" if product["warnings"] else "ok", "product": product}
                     log.info("商品数据 %s %s", target.key, json.dumps(product, ensure_ascii=False))
                 except Exception as exc:
-                    results[target.key] = {"status": "error", "error": f"{type(exc).__name__}: {exc}"}
+                    results[target.key] = {"status": "error", "error": f"{type(exc).__name__}: {exc}", "warnings": list(favorite_warnings)}
                     log.error("商品 %s 采集失败：%s", target.key, exc)
         return results

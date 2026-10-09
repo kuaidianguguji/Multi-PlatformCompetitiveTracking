@@ -27,7 +27,7 @@ def notify_command_problem(cfg, command, *, report=None, error=None, dry_run=Fal
               "status": "error" if error else (report or {}).get("status", "ok"), "products": {}, "platforms": {}}
     if error:
         result['error'] = error
-    notify_admins(cfg, result, reports={command: report} if report else {})
+    notify_admins(cfg, result, reports={command: report} if report else {}, summary=False)
 
 
 def main(argv=None):
