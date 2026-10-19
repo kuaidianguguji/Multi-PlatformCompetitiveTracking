@@ -53,7 +53,7 @@ Copy-Item config.example.toml config.toml  # 已有 config.toml 时不要覆盖
 2. 对每个平台筛选：平台为 `mercado`、商品 ID 非空、监控开关值恰为“开启”、数据推送人非空。监控字段不把布尔 true 或数字 1 当作开启。
 3. 以 `平台:商品ID` 去重，例如 `mercado:MLB6984707226`。同一商品的所有飞书记录、接收人、推送开关保留在 `tracking_records`。推送开关不影响采集，发送消息时逐记录判断。
 4. 无合格记录时直接进入下个平台，不启动浏览器。未实现的平台记为 `unsupported` 并继续。
-5. 自动创建 `stron_token/mercado/profile`。专用 Chromium profile 保存 Cookie、localStorage 和浏览器会话信息；另外按来源域保存/恢复 sessionStorage。会话过期仍需登录。
+5. 平台的 `credentials_dir` 非空时直接使用指定的 Chromium 用户数据根目录；为空时沿用 `stron_token/mercado/profile` 等原目录。Cookie、localStorage 由浏览器保存，另外按来源域保存/恢复 sessionStorage。会话过期仍需登录。
 6. 打开收藏页，文档加载完成后固定等 10 秒。若跳转 `/login`，点击“注册/登录”，最多等 300 秒，检测到 `/home` 后额外等待 `login_settle_seconds`（默认 5 秒），再进入收藏页。
 7. 从收藏第一页开始，遍历虚拟滚动的所有行和列，合并固定图片列，自动翻页；找到全部目标后可以提前结束。若仍缺商品，则必须完成收藏扫描，才能进入搜索补全。
 8. 对收藏中缺少的 ID 进入 `#/allItems` 普通商品页，在“商品ID”输入框查询；只要结果表有商品，就采用第一条结果，不要求返回 ID 与搜索词完全一致。命中后在同一页面点击“加入收藏”，按实际返回行选择收藏分组。
@@ -107,12 +107,42 @@ Copy-Item config.example.toml config.toml  # 已有 config.toml 时不要覆盖
 - 默认每天中国时间 09:00 执行，启动时不立即采集；需要启动即执行可设置 `run_on_start = true`。
 - `stron_token/schedule_state.json` 保存当日定时执行记录，防止常驻进程重启后重复执行。失败当日也算一次尝试，修复后可用 `once` 手动补跑。`once` 不占用定时执行记录。
 - `run_on_start = false` 且启动时已过当天计划时间，将等待次日；运行期间电脑睡眠后恢复，会在下次检查时补执行一次，不补跑历史多天。
-- 程序使用进程锁避免同时读写同一 profile。默认每轮正常关闭浏览器以保存会话；端口被占用会明确报错，不接管日常浏览器。
-- `close_after_run = false` 用于单次调试，下一次运行前必须关闭遗留的项目浏览器。定时运行应保留默认 `true`。
+- 程序既有项目状态锁，也有实际浏览器凭证目录锁；共享目录被占用时有限等待，不切换到其他凭证。每轮正常关闭浏览器并等待真实进程退出后，才释放目录锁；端口被占用会明确报错，不接管日常浏览器。
+- 默认独立目录的 `close_after_run = false` 用于单次调试，采集结束后程序会等待手动关闭浏览器，并保持目录锁。指定共享目录时始终关闭浏览器，保证凭证落盘后交给另一项目。定时运行应保留默认 `true`。
 - Shopee 根据当前要求始终在查询结束后关闭浏览器，覆盖 `close_after_run = false`；新标签页中执行采集时也会保存会话并退出整个项目浏览器。
 - 常驻依赖进程和电脑持续运行；Windows 可在“任务计划程序”创建用户登录时启动 `serve` 的任务。首次及过期登录需要交互桌面，请选择“仅当用户登录时运行”，不要无头运行。程序路径为虚拟环境 Python，参数为 `-m competitive_tracking --config "完整配置路径" serve`，起始目录设为项目目录。
 
 `stron_token` 包含敏感登录数据和飞书同步状态；`config.toml` 包含密钥；`data`/`logs` 可能包含业务数据。它们已被 `.gitignore` 排除。不要手动强制加入 Git。外部写操作包括蓝鲸“加入收藏”、启用后的飞书表同步和消息发送，各模块可独立关闭。
+
+## 与其他项目共享登录凭证
+
+每个平台可分别配置 `credentials_dir`。指定目录必须是浏览器用户数据根目录，即包含 `Default`、`Local State` 的那一层；程序不会再追加平台名、`profile` 或 `Default`。
+
+```toml
+[mercado]
+# 直接复用 ProductSelection 的蓝鲸登录。Windows 路径使用单引号，避免反斜杠转义。
+credentials_dir = 'C:\Users\PC\Documents\ProductSelection\DataSourceLoginCredentials\lanjing'
+
+[shopee]
+# 留空保持当前项目的独立登录凭证。
+credentials_dir = ""
+
+[tiktok]
+credentials_dir = ""
+```
+
+这些键应添加到现有的平台配置段中，不要重复声明已有的 `[mercado]`、`[shopee]` 或 `[tiktok]`。相对路径以 `config.toml` 所在目录为基准，也支持环境变量及 `~` 展开。只有空字符串（或全空白）使用原默认目录；指定路径发生占用、权限或启动错误时直接报告，不会悄悄创建另一套登录状态。未填写这些新键的旧配置继续使用原路径，原凭证不迁移、不清空。
+
+`[app].session_dir` 保持项目自己的 `stron_token`，飞书写入/消息去重、每日调度记录和项目进程锁不与其他项目共享。未指定凭证目录时，浏览器仍使用 `stron_token/<平台>/profile`，快照仍保存到原位置 `stron_token/<平台>/session_storage.json`。
+
+共享目录中，两个项目必须遵循同一套规则：
+
+1. **浏览器配置**：直接使用共享根目录，两边使用同一 Windows 用户、同一款兼容版本浏览器。本地配置已按原目录的 `Last Browser` 选择已有 Chrome，其他电脑需按实际安装位置配置 `[browser].executable`。
+2. **会话快照**：使用根目录下的 `session_storage.json`，格式为 `{"https://xp.lingdongsz.com": {"键名": "字符串值"}}`。导航脚本执行前，仅恢复当前 origin，且不覆盖页面中已有的键。保存时只更新当前 origin，保留其他 origin；使用同目录临时文件、刷盘和原子替换。损坏文件只记录不含凭证值的警告，不影响浏览器本身的 Cookie。
+3. **目录锁**：两边启动浏览器前都对根目录下 `.login_credentials.lock` 加锁。Windows 锁文件第 0 字节、长度 1；其他系统使用 `flock` 排他锁。锁文件不删除、不替换，进程退出自动释放系统锁。锁要持有到浏览器真实进程完全退出，不能在 CDP 断连时就释放。
+4. **占用处理**：`[browser].credentials_lock_timeout_seconds` 默认 60 秒，设 0 可立即报错。对于尚未实现统一锁的旧程序，本项目也会检查使用同一目录的 Chrome/Edge 进程，发现占用就明确拒绝启动；跨项目完整互斥仍要求另一项目实现相同的锁协议。
+
+共享目录内的快照和浏览器文件同样属于登录凭证，不输出到日志、不提交 Git。如将自定义目录放进仓库，须将整个目录加入 `.gitignore`。正常退出会更新共享登录状态，不会把项目业务状态写入共享目录。
 
 ## TikTok / FastMoss 采集
 

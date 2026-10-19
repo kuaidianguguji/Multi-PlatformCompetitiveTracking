@@ -295,6 +295,91 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(result["mercado:MLB123"]["product"]["favorite_status"], "failed")
         self.assertEqual(result["mercado:MLB124"]["status"], "ok")
 
+    def prepare_collection(self, collector):
+        collector.session_factory = Mock()
+        collector.session_factory.return_value.__enter__ = Mock(return_value=collector.page)
+        collector.session_factory.return_value.__exit__ = Mock(return_value=False)
+        collector._login = Mock()
+        collector._favorite = Mock(return_value="added")
+        collector._dismiss_upgrade_dialog = Mock()
+
+    def test_favorites_failure_preserves_found_and_searches_remaining_independently(self):
+        from competitive_tracking.models import TrackingTarget
+        collector = self.make()
+        self.prepare_collection(collector)
+        collector.cfg["favorite_load_retries"] = 0
+        def failed_favorites(wanted):
+            collector._favorite_products["MLB123"] = {"product_id": "MLB123", "warnings": []}
+            raise TimeoutError("收藏第二页加载超时")
+        collector._favorites = Mock(side_effect=failed_favorites)
+        collector._search = Mock(side_effect=[
+            {"product_id": "MLB124", "warnings": []},
+            RuntimeError("采集期间登录失效，请重新登录"),
+            None,
+        ])
+        targets = [TrackingTarget("mercado", "MLB" + str(i)) for i in range(123, 127)]
+        result = collector.collect(targets)
+        self.assertEqual([c.args[0] for c in collector._search.call_args_list], ["MLB124", "MLB125", "MLB126"])
+        for pid in ("MLB123", "MLB124"):
+            entry = result["mercado:" + pid]
+            self.assertEqual(entry["status"], "partial")
+            self.assertIn("收藏第二页加载超时", entry["product"]["warnings"][0])
+        self.assertEqual(result["mercado:MLB123"]["product"]["origin"], "favorite")
+        self.assertEqual(result["mercado:MLB124"]["product"]["origin"], "search")
+        self.assertEqual(result["mercado:MLB125"]["status"], "error")
+        self.assertIn("登录失效", result["mercado:MLB125"]["error"])
+        self.assertEqual(result["mercado:MLB126"]["status"], "not_found")
+        self.assertEqual(result["mercado:MLB126"]["error"], "搜索结果为空")
+        self.assertIn("收藏第二页加载超时", result["mercado:MLB126"]["warnings"][0])
+
+    def test_favorites_retry_recovers_without_search_and_retains_warning(self):
+        from competitive_tracking.models import TrackingTarget
+        collector = self.make()
+        self.prepare_collection(collector)
+        collector.cfg["favorite_load_retries"] = 1
+        collector._favorites = Mock(side_effect=[
+            TimeoutError("表格结果加载超时"),
+            {"MLB123": {"product_id": "MLB123", "warnings": []}},
+        ])
+        collector._search = Mock()
+        result = collector.collect([TrackingTarget("mercado", "MLB123")])
+        self.assertEqual(collector._favorites.call_count, 2)
+        collector.page.refresh.assert_called_once()
+        collector._search.assert_not_called()
+        self.assertEqual(result["mercado:MLB123"]["status"], "partial")
+        self.assertIn("表格结果加载超时", result["mercado:MLB123"]["product"]["warnings"][0])
+
+    def test_initial_login_failure_is_not_replaced_with_search_empty(self):
+        from competitive_tracking.models import TrackingTarget
+        collector = self.make()
+        self.prepare_collection(collector)
+        collector._login.side_effect = RuntimeError("手动登录失败")
+        collector._favorites, collector._search = Mock(), Mock()
+        with self.assertRaisesRegex(RuntimeError, "手动登录失败"):
+            collector.collect([TrackingTarget("mercado", "MLB123")])
+        collector._favorites.assert_not_called()
+        collector._search.assert_not_called()
+
+    def test_ready_timeout_records_safe_structure_diagnostics(self):
+        collector = self.make()
+        collector._busy = Mock(return_value=False)
+        collector.page.url = "https://xp.lingdongsz.com/?session=SECRET#/favorite?email=PRIVATE"
+        collector.page.html = '<input value="PRIVATE_PAGE_INPUT"><div class="vxe-table"></div>'
+        collector.page.run_js.return_value = {
+            "tables": 1, "rows": 0, "pagers": 0, "loading_masks": 0,
+            "upgrade_dialogs": 1, "dialog_overlays": 1,
+        }
+        with self.assertLogs("competitive_tracking.platforms.mercado.collector", level="WARNING") as logs:
+            with self.assertRaises(TimeoutError) as error:
+                collector._ready()
+        details = str(error.exception) + " ".join(logs.output)
+        self.assertIn("https://xp.lingdongsz.com/#/favorite", details)
+        self.assertIn('"rows": 0', details)
+        self.assertIn('"busy": false', details)
+        self.assertIn('"upgrade_dialogs": 1', details)
+        self.assertNotIn("SECRET", details)
+        self.assertNotIn("PRIVATE", details)
+
     def test_xpath_escaping(self):
         from lxml import etree
         for value in ["每日查询分组", "a'b", 'a"b', 'a\'b"c']:

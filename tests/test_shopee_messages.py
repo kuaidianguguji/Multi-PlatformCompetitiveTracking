@@ -70,15 +70,16 @@ class ShopeeMessageTests(unittest.TestCase):
         self.assertEqual(self.sink.write(self.result)['skipped_count'], 2)
         self.assertEqual(self.client.request.call_count, 2)
 
-    def test_disabled_or_failed_shopee_never_sent(self):
+    def test_disabled_shopee_not_sent_but_failure_notice_is_sent(self):
         for field, value in [('推送开关', '关闭'), ('监控开关', '关闭'), ('数据推送人', [])]:
             old = self.rows[0]['fields'][field]
             self.rows[0]['fields'][field] = value
             self.assertEqual(self.sink.write(self.result)['planned'], [])
             self.rows[0]['fields'][field] = old
         self.result['products']['shopee:12345678901']['status'] = 'error'
-        self.assertEqual(self.sink.write(self.result)['planned'], [])
-        self.client.request.assert_not_called()
+        report = self.sink.write(self.result)
+        self.assertEqual(report['sent'][0]['notice_count'], 1)
+        self.assertIn('商品采集失败', report['planned'][0]['body']['content'])
 
     def test_partial_missing_values_keep_zero_and_do_not_inherit_mercado_links(self):
         entry = self.result['products']['shopee:12345678901']

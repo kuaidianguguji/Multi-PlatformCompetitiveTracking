@@ -4,7 +4,8 @@
 [app]
 # 按顺序执行的平台；当前支持 mercado 和 shopee，未实现的平台打印跳过日志。
 platforms = ["mercado", "shopee", "tiktok"]
-# Cookie、浏览器 profile、sessionStorage 的根目录；首次运行自动创建。
+# 项目状态根目录：存放飞书去重、调度记录、进程锁及未指定 credentials_dir 平台的默认浏览器凭证。
+# 各平台指定外部凭证目录不会改变这里，也不会搬动原有文件。
 session_dir = "stron_token"
 # 每次运行的 JSON 输出目录；文件以运行时间命名，latest.json 为最近一次结果。
 output_dir = "data"
@@ -67,16 +68,23 @@ owner = "负责人"
 executable = ""
 # 此项目专用调试端口；必须未被其他浏览器占用，禁止接管日常浏览器。
 port = 9333
+# 等待共享凭证目录被其他项目释放的最长秒数（0～86400）；0 表示占用时立即报错，绝不回退到其他目录。
+credentials_lock_timeout_seconds = 60
 # 是否无头运行；首次登录必须 false，定时运行也建议 false 以便重新登录。
 headless = false
 # DOM 元素出现的最长等待时间。
 element_timeout_seconds = 30
 # 文档加载的最长等待时间。
 page_load_timeout_seconds = 60
-# 每轮结束关闭项目专用浏览器，确保 profile 正常落盘；常驻下轮重新加载会话。
+# 每轮结束关闭浏览器并等待真实进程退出，确保凭证落盘；指定共享目录时始终关闭。
+# 默认独立目录设 false 时将等待手动关闭浏览器，关闭前不释放目录锁；常驻建议保持 true。
 close_after_run = true
 
 [mercado]
+# Mercado/蓝鲸 Chromium 用户数据根目录；非空时直接使用此目录，不追加 mercado/profile/Default。
+# 空字符串沿用 app.session_dir/mercado/profile，sessionStorage 快照也保持原位置；相对路径以配置文件目录为基准。
+# Windows 路径请用单引号，例如 'C:\Users\PC\Documents\ProductSelection\DataSourceLoginCredentials\lanjing'。
+credentials_dir = ""
 # 蓝鲸收藏页地址；优先在此查找飞书中需要监控的商品。
 favorite_url = "https://xp.lingdongsz.com/#/favorite"
 # 蓝鲸登录页地址；通过 URL fragment 判断是否需要手动登录。
@@ -230,6 +238,8 @@ data_url = ""
 history_url = ""
 
 [shopee]
+# Shopee 的 Chromium 用户数据根目录；空字符串沿用 app.session_dir/shopee/profile，指定时直接读写该根目录。
+credentials_dir = ""
 # 收藏命中后仍逐个查询选产品，补齐日销量、销售额和排名；关闭时恢复只查收藏逻辑。
 enrich_favorites = true
 # Shopdora 首页；浏览器先访问此地址并检查是否已登录。
@@ -388,6 +398,8 @@ data_url = "https://qcn9sleukmer.feishu.cn/base/Sv8bbLjl9a8FUssWffHckjyInpb?tabl
 history_url = "https://qcn9sleukmer.feishu.cn/sheets/CEQKsDr3OhCkJItCeeFcd5Q3n9e?sheet=061d69"
 
 [tiktok]
+# TikTok 的 Chromium 用户数据根目录；空字符串沿用 app.session_dir/tiktok/profile，指定时直接读写该根目录。
+credentials_dir = ""
 # FastMoss 巴西商品搜索地址；商品 ID 由程序作为 words 参数拼接，保持完整字符串。
 search_url = "https://www.fastmoss.com/zh/e-commerce/search"
 # 只监听页面正常发起的商品搜索接口；校验 ID/国家/页码后仅保留商品对象，排除登录元数据。

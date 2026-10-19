@@ -191,6 +191,7 @@ class SheetsTests(unittest.TestCase):
         report = self.sink.write(self.result)
         self.assertEqual(report["appended_count"], 1)
         self.assertEqual(len(report["skipped"]), 1)
+        self.assertEqual(report["status"], "partial")
 
     def test_history_metadata_does_not_remove_disabled_products(self):
         entry = self.result["products"]["mercado:MLB123"]

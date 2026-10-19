@@ -16,6 +16,22 @@ def load_config(path: str | Path) -> dict:
         if section not in cfg:
             raise ValueError(f"配置缺少 [{section}]，请参考 config.example.toml")
     cfg["root"] = path.parent
+    # Credential overrides do not move business state or Feishu deduplication.
+    for platform in ("mercado", "shopee", "tiktok"):
+        settings = cfg.get(platform)
+        if settings is None:
+            continue
+        directory = settings.setdefault("credentials_dir", "")
+        if not isinstance(directory, str):
+            raise ValueError(f"{platform}.credentials_dir 必须为路径字符串，留空使用默认凭证目录")
+        directory = directory.strip()
+        if "\x00" in directory:
+            raise ValueError(f"{platform}.credentials_dir 包含无效字符")
+        settings["credentials_dir"] = (path.parent / Path(os.path.expandvars(directory)).expanduser()).resolve() if directory else ""
+    cfg["browser"].setdefault("credentials_lock_timeout_seconds", 60)
+    wait = cfg["browser"]["credentials_lock_timeout_seconds"]
+    if isinstance(wait, bool) or not isinstance(wait, (int, float)) or not 0 <= wait <= 86400:
+        raise ValueError("browser.credentials_lock_timeout_seconds 必须为 0..86400 秒，0 表示占用时立即报错")
     # 兼容尚未添加此配置项的旧 config.toml。
     cfg["mercado"].setdefault("login_settle_seconds", 5)
     cfg["mercado"].setdefault("upgrade_wait_seconds", 30)

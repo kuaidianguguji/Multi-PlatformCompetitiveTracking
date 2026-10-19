@@ -61,7 +61,7 @@ class TikTokMessageTests(unittest.TestCase):
         self.assertEqual(self.sink.write(self.result)['skipped_count'], 2)
         self.assertEqual(self.client.request.call_count, 2)
 
-    def test_disabled_targets_platform_or_failed_product_not_sent(self):
+    def test_disabled_targets_not_sent_but_failed_product_notice_is_sent(self):
         for field, value in [('监控开关', '关闭'), ('推送开关', '关闭'), ('数据推送人', [])]:
             old = self.rows[0]['fields'][field]; self.rows[0]['fields'][field] = value
             self.assertEqual(self.sink.write(self.result)['planned'], [])
@@ -70,8 +70,9 @@ class TikTokMessageTests(unittest.TestCase):
         self.assertEqual(self.sink.write(self.result)['planned'], [])
         self.cfg['feishu_messages']['platforms'] = ['tiktok']
         self.result['products']['tiktok:'+PID]['status'] = 'error'
-        self.assertEqual(self.sink.write(self.result)['planned'], [])
-        self.client.request.assert_not_called()
+        report = self.sink.write(self.result)
+        self.assertEqual(report['sent'][0]['notice_count'], 1)
+        self.assertIn('商品采集失败', report['planned'][0]['body']['content'])
 
     def test_unknowns_zero_escaping_and_platform_link_isolation(self):
         entry = self.result['products']['tiktok:'+PID]; entry['status'] = 'partial'

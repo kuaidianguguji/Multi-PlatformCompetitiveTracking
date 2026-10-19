@@ -10,6 +10,14 @@ dist/
 !.env.example
 config.toml
 stron_token/
+# 自定义凭证目录即使位于项目内，也不能提交快照、锁或 Chromium 的 Cookie/密钥文件。
+session_storage.json
+.session_storage.*.tmp
+.login_credentials.lock
+**/Local State
+**/Cookies
+**/Cookies-journal
+DataSourceLoginCredentials/
 data/
 logs/
 *.log

@@ -136,6 +136,7 @@ class OutputTests(unittest.TestCase):
         old["products"]["mercado:MLB123"]["product"]["captured_at"] = "2026-09-14T03:00:00+00:00"
         report = self.sink.write(old)
         self.assertEqual(len(report["plan"]["skipped"]), 1)
+        self.assertEqual(report["status"], "ok")
         self.assertEqual(self.client.request.call_count, 1)
 
     def test_dry_run_makes_no_external_or_ledger_changes(self):
@@ -187,6 +188,7 @@ class OutputTests(unittest.TestCase):
         result["products"]["shopee:MLB123"] = {"platform": "shopee", "status": "ok"}
         report = self.sink.write(result)
         self.assertEqual(len(report["plan"]["skipped"]), 1)
+        self.assertEqual(report["status"], "partial")
         self.client.request.assert_not_called()
 
     def test_write_readback_mismatch_reported(self):

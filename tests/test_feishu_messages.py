@@ -10,6 +10,7 @@ from competitive_tracking.config import load_config
 from competitive_tracking.integrations.feishu import FeishuAPIError
 from competitive_tracking.runner import run_once
 from competitive_tracking.sinks.feishu_messages import FeishuMessageSink, markdown_text
+from competitive_tracking.sinks.admin_notifications import build_run_summary
 from test_feishu_output import sample
 
 
@@ -108,11 +109,23 @@ class MessageTests(unittest.TestCase):
         self.assertEqual(len(report['unavailable_products']), 1)
         self.assertEqual({p['name'] for p in report['unavailable_products'][0]['recipients']}, {'熊苏帆', '张任善宇'})
         self.assertIn('搜索结果未完成更新', '\n'.join(logs.output))
-        self.client.request.assert_not_called()
+        self.assertEqual(self.client.request.call_count, 2)
+        self.assertEqual(sum(item['notice_count'] for item in report['sent']), 2)
+        self.assertIn('商品采集失败', report['planned'][0]['body']['content'])
+        self.assertNotIn('商品搜索结果为空', report['planned'][0]['body']['content'])
+        summary = build_run_summary(self.cfg, self.result, {'messages': report})['messages']
+        self.assertEqual(summary['recipient_count'], 2)
+        self.assertEqual(summary['notice_delivery_count'], 2)
+        self.assertEqual(summary['unsent_recipients'], [])
+        repeated = self.sink.write(self.result)
+        self.assertEqual(len(repeated['completed_identities']), 2)
+        self.assertEqual(build_run_summary(self.cfg, self.result, {'messages': repeated})['messages']['unsent_recipients'], [])
+        self.assertEqual(self.client.request.call_count, 2)
         entry['status'] = 'ok'
         recovered = self.sink.write(self.result)
         self.assertEqual(recovered['status'], 'ok')
         self.assertEqual({call.kwargs['json']['receive_id'] for call in self.client.request.call_args_list}, {'ou_bear', 'ou_zhang'})
+        self.assertEqual(self.client.request.call_count, 4)
 
     def test_failed_product_with_push_disabled_does_not_report_missing_message(self):
         self.result['products']['mercado:MLB123']['status'] = 'error'
@@ -172,7 +185,7 @@ class MessageTests(unittest.TestCase):
         self.assertEqual(self.sink.write(self.result)['status'], 'partial')
         self.client.request.assert_not_called()
 
-    def test_chunks_and_partial_but_not_failed_products(self):
+    def test_chunks_keep_partial_data_and_include_failed_product_notice(self):
         for i in range(5):
             pid = 'MLB' + str(i)
             entry = deepcopy(self.result['products']['mercado:MLB123'])
@@ -184,11 +197,31 @@ class MessageTests(unittest.TestCase):
             self.rows.append(record)
         self.result['products']['mercado:MLB123']['status'] = 'error'
         report = self.sink.write(self.result)
-        self.assertEqual([s['product_count'] for s in report['sent']], [4, 1])
+        self.assertEqual([s['product_count'] for s in report['sent']], [4, 2])
+        self.assertEqual(sum(s['data_product_count'] for s in report['sent']), 5)
+        self.assertEqual(sum(s['notice_count'] for s in report['sent']), 1)
         self.assertIn('本次采集不完整', report['planned'][0]['body']['content'])
 
     def test_external_text_cannot_inject_card_mentions(self):
         self.assertEqual(markdown_text('<at id=all>**hi**</at>'), '&lt;at id=all&gt;\\*\\*hi\\*\\*&lt;/at&gt;')
+
+    def test_empty_search_sends_platform_id_and_empty_notice_for_all_platforms(self):
+        self.cfg['feishu_messages']['platforms'] = ['mercado', 'shopee', 'tiktok']
+        self.result['products'] = {}
+        self.rows = []
+        for platform in ('mercado', 'shopee', 'tiktok'):
+            key = platform + ':123'
+            self.result['products'][key] = {'platform': platform, 'product_id': '123', 'status': 'not_found', 'error': '搜索无匹配商品'}
+            self.rows.append({'record_id': key, 'fields': {'平台': platform, '商品ID': '123', '监控开关': '开启', '推送开关': '开启', '数据推送人': [{'id': 'ou_recipient'}]}})
+        report = self.sink.write(self.result)
+        self.assertEqual(len(report['sent']), 1)
+        self.assertEqual(report['sent'][0]['notice_count'], 3)
+        self.assertEqual(report['sent'][0]['data_product_count'], 0)
+        content = report['planned'][0]['body']['content']
+        for platform in ('mercado', 'shopee', 'tiktok'):
+            self.assertIn(platform + ' · 123', content)
+        self.assertEqual(content.count('商品搜索结果为空'), 3)
+        self.assertNotIn('R$', content)
 
     @patch('competitive_tracking.runner.FeishuMessageSink')
     @patch('competitive_tracking.runner.FeishuSink')
