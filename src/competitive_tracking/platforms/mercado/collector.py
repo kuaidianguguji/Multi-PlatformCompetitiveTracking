@@ -197,8 +197,18 @@ class MercadoCollector:
         while True:
             dimensions = self._scroll(x, y)
             if dimensions is None:
-                # Explicit empty table still has a pager.
-                if pagination(self.page.html)["total"] == 0:
+                # A one-result table may legitimately omit the pager.  Parse
+                # the loaded rows directly instead of treating that layout as
+                # an incomplete scan.
+                snapshot = self._snapshot()
+                products = parse_html(snapshot)
+                if products:
+                    return products
+                try:
+                    empty = pagination(self.page.html)["total"] == 0
+                except RuntimeError:
+                    empty = bool(re.search(r"(?:共计|共)\s*0\s*条", self.page.html))
+                if empty:
                     return {}
                 raise RuntimeError("找不到虚拟表格滚动容器")
             if dimensions["height"] <= 0 or dimensions["width"] <= 0:
@@ -239,13 +249,13 @@ class MercadoCollector:
         found, seen_pages, scanned_ids = getattr(self, "_favorite_products", {}), set(), set()
         self._ready()
         # A remembered SPA page may not be the first page.
-        initial = pagination(self.page.html)
+        initial = self._pagination_or_single_page()
         if initial["current"] != 1:
             self._element('//div[contains(@class,"el-pagination")]//li[contains(@class,"number") and normalize-space(.)="1"]').click()
             self._wait(lambda: pagination(self.page.html)["current"] == 1 and not self._busy(), "返回收藏第一页超时")
             time.sleep(self.cfg["result_settle_seconds"])
         for _ in range(self.cfg["max_pages"]):
-            info = pagination(self.page.html)
+            info = self._pagination_or_single_page()
             if info["current"] in seen_pages:
                 raise RuntimeError("收藏分页重复，停止采集")
             seen_pages.add(info["current"])
@@ -266,10 +276,17 @@ class MercadoCollector:
                 raise RuntimeError("下一页按钮不存在")
             button.click()
             self._wait(lambda: pagination(self.page.html)["current"] > info["current"] and not self._busy(), "收藏翻页未前进")
-            # Pagination highlight may update before rows; require actual product change too.
-            self._wait(lambda: bool(set(parse_html(self._snapshot())) - before_ids), "收藏页码已变但商品列表未更新")
             time.sleep(self.cfg["result_settle_seconds"])
         raise RuntimeError("收藏分页达到 max_pages，仍有下一页")
+
+    def _pagination_or_single_page(self):
+        try:
+            return pagination(self.page.html)
+        except RuntimeError:
+            products = parse_html(self._snapshot())
+            if products:
+                return {"current": 1, "total": len(products), "has_next": False}
+            raise
 
     def _search(self, pid: str) -> dict | None:
         # Reload a fresh search document so accepting the first result cannot
@@ -280,11 +297,9 @@ class MercadoCollector:
         self._wait(lambda: not self._busy(), "搜索页初始加载未完成")
         field = self._element(self.selectors["search_input"])
         field.input(pid, clear=True)
-        previous = self._snapshot()
         def empty_result():
             total = BeautifulSoup(self.page.html, "lxml").select_one(".el-pagination__total")
             return bool(total and re.search(r"(?:共计|共)\s*0\s*条", total.get_text()))
-        previously_empty = empty_result()
         saw_loading = False
         self._element(self.selectors["search_button"]).click()
         def changed():
@@ -294,15 +309,15 @@ class MercadoCollector:
                 return False
             snapshot = self._snapshot()
             rows = parse_html(snapshot)
-            # An alias can return the same row as the initial table. An observed
-            # loading cycle also proves completion; unchanged rows alone do not.
-            return bool(rows) and (pid in rows or snapshot != previous or saw_loading) or (
-                empty_result() and (saw_loading or snapshot != previous or not previously_empty))
+            # The page is freshly loaded before every query. Once loading has
+            # ended and rows (or an explicit zero result) are present, consume
+            # the current table; do not require a detectable DOM diff.
+            return bool(rows) or empty_result()
         try:
             self._wait(changed, f"搜索 {pid} 结果未完成更新")
         except TimeoutError:
-            log.warning("搜索超时诊断：商品ID=%s，观察到查询加载=%s，查询前商品ID=%s，当前商品ID=%s，URL=%s",
-                        pid, saw_loading, list(parse_html(previous)), list(parse_html(self._snapshot())), self.page.url)
+            log.warning("搜索结果加载超时诊断：商品ID=%s，观察到查询加载=%s，当前商品ID=%s，URL=%s",
+                        pid, saw_loading, list(parse_html(self._snapshot())), self.page.url)
             raise
         time.sleep(self.cfg["result_settle_seconds"])
         # allItems may return a different 商品ID than the requested one.  The

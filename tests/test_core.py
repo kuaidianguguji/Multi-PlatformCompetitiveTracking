@@ -227,16 +227,23 @@ class CollectorTests(unittest.TestCase):
         collector._scan_page = Mock(return_value=parse_html(html))
         self.assertEqual(collector._search("MLBU4813895273")["product_id"], "MLB123")
 
-    def test_search_unchanged_alias_without_completion_still_times_out(self):
+    def test_search_uses_loaded_rows_without_requiring_dom_change(self):
         collector = self.make()
         collector._navigate = Mock()
         collector._element = Mock()
         collector._snapshot = Mock(return_value=(ROOT / "tests/fixtures/table.html").read_text(encoding="utf-8"))
         collector._busy = Mock(return_value=False)
-        collector._scan_page = Mock()
-        with self.assertRaisesRegex(TimeoutError, "结果未完成更新"):
-            collector._search("MLBU4813895273")
-        collector._scan_page.assert_not_called()
+        collector._scan_page = Mock(return_value={"MLB123": {"product_id": "MLB123"}})
+        self.assertEqual(collector._search("MLBU4813895273")["product_id"], "MLB123")
+        collector._scan_page.assert_called_once()
+
+    def test_favorites_accepts_single_loaded_row_without_pager(self):
+        collector = self.make()
+        html = (ROOT / "tests/fixtures/table.html").read_text(encoding="utf-8")
+        collector.page.html = html.replace('<div class="el-pagination">', '<div class="removed-pagination">')
+        collector._snapshot = Mock(return_value=html)
+        page = collector._pagination_or_single_page()
+        self.assertEqual(page, {"current": 1, "total": 1, "has_next": False})
 
     def test_search_zero_count_outside_table_snapshot_is_completed(self):
         collector = self.make()
